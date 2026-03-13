@@ -1,4 +1,4 @@
-# SavedGems
+# Instagram Saved Gems
 
 Два независимых инструмента в одном репозитории:
 
