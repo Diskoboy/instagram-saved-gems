@@ -1,0 +1,13 @@
+# Video Analysis Pipeline — дополнительные зависимости
+# Основные (yt-dlp, ffmpeg) уже в requirements.txt / setup.sh
+
+# Транскрипция аудио
+faster-whisper>=1.0.0
+
+# Примечания по платформам:
+# Windows CPU: faster-whisper работает через int8 (ctranslate2 подтягивается как зависимость)
+# Linux/macOS GPU: pip install torch  →  WHISPER_DEVICE=cuda в .env
+# ffmpeg должен быть установлен системно (не через pip):
+#   Ubuntu/Debian: sudo apt install ffmpeg
+#   macOS:         brew install ffmpeg
+#   Windows:       winget install ffmpeg  или  https://ffmpeg.org/download.html

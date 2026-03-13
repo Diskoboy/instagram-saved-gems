@@ -1,0 +1,54 @@
+# Окружение
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+node_modules/
+dist/
+build/
+*.log
+
+# Куки и сессии
+cookies.txt
+*.session
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# Документация проекта (локальная)
+plan-v001.md
+tasks.md
+
+# Instagram exports (личные данные)
+saved_posts.html
+saved_collections.html
+
+# Генерируемые данные Instagram pipeline
+content/
+data/posts.json
+data/links.json
+data/categories.json
+data/tools.json
+data/values.json
+obsidian/
+html/index.html
+html/data/posts.js
+*.info.json
+
+# Генерируемые данные Video Analysis pipeline
+content_analysis/
+data/analysis.json
+html/analysis.html
+
+# Локальные бинарники (ffmpeg для Windows — положи руками в bin/)
+bin/ffmpeg.exe
+bin/ffmpeg
+bin/ffprobe.exe
+bin/ffprobe
