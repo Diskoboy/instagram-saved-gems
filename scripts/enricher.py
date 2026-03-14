@@ -13,6 +13,7 @@ Usage:
 """
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -21,20 +22,13 @@ from llm import ask  # noqa: E402
 
 ENRICH_PROMPT = """Analyze this Instagram post and return ONLY valid JSON.
 
-Existing categories ({cat_count}/10): {existing_cats_json}
-
-Rules for category:
-- If post fits an existing category → use that exact name
-- If no fit AND count < 10 → suggest new short name (1-3 words, English)
-- If no fit AND count >= 10 → use the closest existing category
-
 Post description and hashtags:
 {description}
 
 {transcription_block}{screen_text_block}
 Return:
 {{
-  "category": "...",
+  "category": "short English label 1-3 words describing the main topic",
   "tools": ["tool1", "tool2"],
   "insight": "one sentence summary in Russian",
   "steps": ["step1", "step2"]
@@ -68,7 +62,28 @@ def parse_json_response(text: str) -> dict:
         return {}
 
 
-def enrich_post(post: dict, analysis: dict | None, existing_cats: list[str]) -> dict:
+_CODE_RE = re.compile(
+    r'import |def |git |docker|npm |pip |apt |http|`|\$\s|\.py|\.sh|\.ts|\.js|={2,}',
+    re.I,
+)
+
+
+def is_useful_screen_text(screen_text: str, transcription: str) -> bool:
+    """Возвращает True если screen_text содержит полезный контент (код, команды, URL),
+    False если это субтитры (дублируют транскрипцию)."""
+    if not screen_text.strip():
+        return False
+    if _CODE_RE.search(screen_text):
+        return True
+    s_words = set(screen_text.lower().split())
+    t_words = set(transcription.lower().split())
+    if not s_words:
+        return False
+    overlap = len(s_words & t_words) / len(s_words)
+    return overlap < 0.6
+
+
+def enrich_post(post: dict, analysis: dict | None, existing_cats: list[str]) -> tuple[dict, str]:
     description = post.get('description', '')[:800]
     hashtags = post.get('hashtags', [])
     if hashtags:
@@ -81,14 +96,18 @@ def enrich_post(post: dict, analysis: dict | None, existing_cats: list[str]) -> 
             transcription_block = f'Transcription (audio):\n{transcription}\n\n'
 
     screen_text_block = ''
+    screen_label = ''
     if analysis:
-        screen_text = analysis.get('screen_text', {}).get('combined', '')[:800]
-        if screen_text:
-            screen_text_block = f'On-screen text:\n{screen_text}\n\n'
+        transcription_text = analysis.get('transcription', {}).get('text', '')
+        screen_raw = analysis.get('screen_text', {}).get('combined', '')
+        if screen_raw:
+            if is_useful_screen_text(screen_raw, transcription_text):
+                screen_text_block = f'On-screen text:\n{screen_raw[:800]}\n\n'
+                screen_label = ' screen:useful'
+            else:
+                screen_label = ' screen:subtitles(skipped)'
 
     prompt = ENRICH_PROMPT.format(
-        cat_count=len(existing_cats),
-        existing_cats_json=json.dumps(existing_cats, ensure_ascii=False),
         description=description,
         transcription_block=transcription_block,
         screen_text_block=screen_text_block,
@@ -98,19 +117,19 @@ def enrich_post(post: dict, analysis: dict | None, existing_cats: list[str]) -> 
         raw = ask(prompt)
     except RuntimeError as e:
         print(f'  LLM error: {e}', file=sys.stderr)
-        return _default()
+        return _default(), screen_label
 
     result = parse_json_response(raw)
     if not result:
         print(f'  failed to parse: {raw[:200]}', file=sys.stderr)
-        return _default()
+        return _default(), screen_label
 
     return {
         'category': result.get('category') or 'Other',
         'tools': result.get('tools', []),
         'insight': result.get('insight', ''),
         'steps': result.get('steps', []),
-    }
+    }, screen_label
 
 
 def main():
@@ -179,10 +198,9 @@ def main():
             if r.get('category')
         ))
 
-        print(f'[{i}/{len(to_process)}] {pid} (cats: {len(existing_cats)})')
-
         analysis = analysis_by_id.get(pid)
-        result = enrich_post(post, analysis, existing_cats)
+        result, screen_label = enrich_post(post, analysis, existing_cats)
+        print(f'[{i}/{len(to_process)}] {pid} (cats: {len(existing_cats)}){screen_label}')
 
         enriched_by_id[pid] = {'id': pid, **result}
 
