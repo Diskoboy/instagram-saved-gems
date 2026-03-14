@@ -23,6 +23,8 @@ OPENROUTER_MODEL = os.getenv('OPENROUTER_MODEL', 'openai/gpt-4o-mini')
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
 ANTHROPIC_MODEL = os.getenv('ANTHROPIC_MODEL', 'claude-haiku-4-5-20251001')
 
+_TIMEOUT = int(os.getenv('LLM_TIMEOUT', '120'))
+
 
 def ask(prompt: str, *, image_b64: str | None = None) -> str:
     provider = LLM_PROVIDER.lower()
@@ -46,7 +48,7 @@ def _ask_ollama(prompt: str, *, image_b64: str | None = None) -> str:
     if image_b64:
         payload['images'] = [image_b64]
 
-    resp = requests.post(f'{OLLAMA_URL}/api/generate', json=payload, timeout=120)
+    resp = requests.post(f'{OLLAMA_URL}/api/generate', json=payload, timeout=_TIMEOUT)
     resp.encoding = 'utf-8'
     try:
         resp.raise_for_status()
@@ -75,7 +77,7 @@ def _ask_openrouter(prompt: str, *, image_b64: str | None = None) -> str:
         'https://openrouter.ai/api/v1/chat/completions',
         json=payload,
         headers={'Authorization': f'Bearer {OPENROUTER_API_KEY}'},
-        timeout=120,
+        timeout=_TIMEOUT,
     )
     resp.encoding = 'utf-8'
     try:
@@ -111,7 +113,7 @@ def _ask_claude(prompt: str, *, image_b64: str | None = None) -> str:
             'x-api-key': ANTHROPIC_API_KEY,
             'anthropic-version': '2023-06-01',
         },
-        timeout=120,
+        timeout=_TIMEOUT,
     )
     resp.encoding = 'utf-8'
     try:

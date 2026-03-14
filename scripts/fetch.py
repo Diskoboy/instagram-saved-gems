@@ -112,9 +112,11 @@ def download_with_ytdlp(url: str, out_dir: Path) -> subprocess.CompletedProcess:
         '--write-info-json',
         '--no-playlist',
         '--cookies-from-browser', f'{BROWSER}:{CHROME_PROFILE if BROWSER == "chrome" else FIREFOX_PROFILE}',
-        '--sleep-interval', '1',
-        '--max-sleep-interval', '3',
-        '--socket-timeout', '30',
+        '--sleep-interval', '3',
+        '--max-sleep-interval', '10',
+        '--socket-timeout', '60',
+        '--retries', '5',
+        '--extractor-retries', '3',
         '--write-thumbnail',
         '--convert-thumbnails', 'jpg',
         '-o', str(out_dir / 'media_%(autonumber)s.%(ext)s'),
@@ -236,6 +238,7 @@ def main():
 
     ok = 0
     err = 0
+    err_ids: list[str] = []
     for i, link in enumerate(links, 1):
         post_id = link['id']
         print(f'[{i}/{len(links)}] {post_id}')
@@ -250,6 +253,7 @@ def main():
             if prev.get('fetch_error') and not retry_errors:
                 print('  previous error, skipping (use --retry-errors to retry)')
                 err += 1
+                err_ids.append(post_id)
                 continue
 
         meta = download_post(link['url'], post_id, content_dir)
@@ -266,6 +270,7 @@ def main():
                 'fetch_error': True,
             }
             err += 1
+            err_ids.append(post_id)
         else:
             media_files = [Path(m) for m in meta['media']]
             post = {
@@ -285,6 +290,11 @@ def main():
         save_meta(post_id, post)
 
     print(f'\nDone. {ok} OK, {err} errors → data/posts/')
+    if err_ids:
+        print(f'\nFailed posts ({len(err_ids)}):')
+        for eid in err_ids:
+            m = load_meta(eid) or {}
+            print(f'  {eid}  {m.get("url", "")}')
 
 
 if __name__ == '__main__':

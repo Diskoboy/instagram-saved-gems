@@ -29,6 +29,8 @@ tasks.md
 # Instagram exports (личные данные)
 saved_posts.html
 saved_collections.html
+inst.txt
+SPEC.md
 
 # Генерируемые данные Instagram pipeline
 content/

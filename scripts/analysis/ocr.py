@@ -89,7 +89,7 @@ def process_images(image_paths: list[Path]) -> dict:
     return {'combined': combined, 'raw_frames': raw_frames}
 
 
-def extract_video_frames(mp4_path: Path, max_frames: int = 5) -> tuple[list[Path], Path]:
+def extract_video_frames(mp4_path: Path, max_frames: int = 2) -> tuple[list[Path], Path]:
     """Extract up to max_frames frames from video via ffmpeg. Returns (frames, tmp_dir)."""
     tmp_dir = Path(tempfile.mkdtemp())
     out_pattern = str(tmp_dir / 'frame_%03d.jpg')
@@ -111,6 +111,8 @@ def main():
                         help='Re-process already processed records')
     parser.add_argument('--ids', nargs='*', metavar='ID',
                         help='Process only these record IDs')
+    parser.add_argument('--video-frames', type=int, default=2, metavar='N',
+                        help='Max frames to extract per video (default: 2)')
     args = parser.parse_args()
 
     id_filter = set(args.ids) if args.ids else None
@@ -160,7 +162,7 @@ def main():
                 result = process_images(source)
             else:
                 print(f'[{i}/{len(to_process)}] {pid} (video → frames)')
-                frames, tmp_dir = extract_video_frames(source)
+                frames, tmp_dir = extract_video_frames(source, max_frames=args.video_frames)
                 if not frames:
                     print(f'  no frames extracted', file=sys.stderr)
                     continue
