@@ -11,12 +11,12 @@ import argparse
 import json
 import os
 import sys
-import urllib.error
-import urllib.request
 from pathlib import Path
 
-DEFAULT_OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
-DEFAULT_MODEL = os.environ.get('OLLAMA_MODEL', 'gemma3:4b')
+ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(ROOT / 'scripts'))
+from llm import ask  # noqa: E402
+
 
 EXTRACT_PROMPT = """Analyze this video content and extract structured information.
 
@@ -272,27 +272,6 @@ def load_analysis(path: Path) -> list[dict]:
     return json.loads(path.read_text(encoding='utf-8'))
 
 
-def query_ollama(prompt: str, model: str, ollama_url: str) -> str:
-    payload = json.dumps({
-        'model': model,
-        'prompt': prompt,
-        'stream': False,
-    }).encode('utf-8')
-
-    req = urllib.request.Request(
-        f'{ollama_url}/api/generate',
-        data=payload,
-        headers={'Content-Type': 'application/json'},
-    )
-
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            data = json.loads(resp.read())
-            return data.get('response', '').strip()
-    except urllib.error.URLError as e:
-        raise RuntimeError(f'ollama request failed: {e}')
-
-
 def parse_json_response(text: str) -> dict:
     start = text.find('{')
     end = text.rfind('}') + 1
@@ -304,7 +283,7 @@ def parse_json_response(text: str) -> dict:
         return {}
 
 
-def extract_tools_for_record(record: dict, model: str, ollama_url: str) -> dict:
+def extract_tools_for_record(record: dict) -> dict:
     transcription = record.get('transcription', {}).get('text', '')[:1500]
     screen_text = record.get('screen_text', {}).get('combined', '')[:800]
 
@@ -316,7 +295,7 @@ def extract_tools_for_record(record: dict, model: str, ollama_url: str) -> dict:
         screen_text=screen_text or '(no on-screen text)',
     )
 
-    response = query_ollama(prompt, model, ollama_url)
+    response = ask(prompt)
     result = parse_json_response(response)
 
     return {
@@ -326,7 +305,7 @@ def extract_tools_for_record(record: dict, model: str, ollama_url: str) -> dict:
     }
 
 
-def categorize_by_value(enriched: list[dict], model: str, ollama_url: str) -> list[dict]:
+def categorize_by_value(enriched: list[dict]) -> list[dict]:
     data_for_prompt = [
         {'id': r['id'], 'insight': r.get('insight', ''), 'value_tags': r.get('value_tags', [])}
         for r in enriched
@@ -340,7 +319,7 @@ def categorize_by_value(enriched: list[dict], model: str, ollama_url: str) -> li
         data=json.dumps(data_for_prompt, ensure_ascii=False, indent=2)
     )
 
-    response = query_ollama(prompt, model, ollama_url)
+    response = ask(prompt)
     result = parse_json_response(response)
 
     return result.get(
@@ -359,8 +338,6 @@ def main():
     parser = argparse.ArgumentParser(description='Build HTML report from analysis.json')
     parser.add_argument('--input', metavar='FILE', default='data/analysis.json')
     parser.add_argument('--output', metavar='FILE', default='html/analysis.html')
-    parser.add_argument('--model', default=DEFAULT_MODEL)
-    parser.add_argument('--ollama-url', default=DEFAULT_OLLAMA_URL)
     parser.add_argument('--no-llm', action='store_true',
                         help='Build report without LLM analysis (just raw data)')
     args = parser.parse_args()
@@ -398,7 +375,7 @@ def main():
                 continue
 
             try:
-                info = extract_tools_for_record(record, args.model, args.ollama_url)
+                info = extract_tools_for_record(record)
             except RuntimeError as e:
                 print(f'  error: {e}', file=sys.stderr)
                 info = {'tools': [], 'value_tags': [], 'insight': ''}
@@ -418,7 +395,7 @@ def main():
 
         print('\nCategorizing by value...')
         try:
-            categories = categorize_by_value(enriched, args.model, args.ollama_url)
+            categories = categorize_by_value(enriched)
         except RuntimeError as e:
             print(f'Categorization error: {e}', file=sys.stderr)
             categories = [{'name': 'Все видео', 'description': '', 'ids': [r['id'] for r in enriched]}]

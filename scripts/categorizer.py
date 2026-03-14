@@ -4,10 +4,11 @@
 data/categories.json, data/tools.json, data/values.json
 """
 import json
-import os
-import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+from llm import ask  # noqa: E402
 
 SKILL_PROMPT = """Given an Instagram post, return ONLY valid JSON.
 
@@ -43,24 +44,11 @@ def categorize_post(post_text: str, existing_cats: list[str]) -> dict:
         post_text=post_text,
     )
 
-    env = {k: v for k, v in os.environ.items() if k != 'CLAUDECODE'}
-    result = subprocess.run(
-        ['claude', '-p', prompt, '--output-format', 'json'],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        env=env,
-    )
-
-    if result.returncode != 0:
-        print(f'  claude error: {result.stderr[-200:]}', file=sys.stderr)
-        return _default()
-
     try:
-        outer = json.loads(result.stdout)
-        raw = outer.get('result', result.stdout)
-    except json.JSONDecodeError:
-        raw = result.stdout
+        raw = ask(prompt)
+    except RuntimeError as e:
+        print(f'  llm error: {e}', file=sys.stderr)
+        return _default()
 
     try:
         if isinstance(raw, str):

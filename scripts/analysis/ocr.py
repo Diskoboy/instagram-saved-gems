@@ -15,11 +15,14 @@ import platform
 import subprocess
 import sys
 import tempfile
-import urllib.error
-import urllib.request
 from pathlib import Path
 
+
+
 ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(ROOT / 'scripts'))
+from llm import ask  # noqa: E402
+
 DEFAULT_OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
 DEFAULT_MODEL = os.environ.get('OLLAMA_MODEL', 'gemma3:4b')
 
@@ -93,26 +96,8 @@ def image_to_base64(path: Path) -> str:
     return base64.b64encode(path.read_bytes()).decode('ascii')
 
 
-def query_ollama(base64_image: str, model: str, ollama_url: str) -> str:
-    payload = json.dumps({
-        'model': model,
-        'prompt': OCR_PROMPT,
-        'images': [base64_image],
-        'stream': False,
-    }).encode('utf-8')
-
-    req = urllib.request.Request(
-        f'{ollama_url}/api/generate',
-        data=payload,
-        headers={'Content-Type': 'application/json'},
-    )
-
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = json.loads(resp.read())
-            return data.get('response', '').strip()
-    except urllib.error.URLError as e:
-        raise RuntimeError(f'ollama request failed: {e}')
+def query_llm(base64_image: str) -> str:
+    return ask(OCR_PROMPT, image_b64=base64_image).strip()
 
 
 def deduplicate_texts(texts: list[str]) -> list[str]:
@@ -127,8 +112,6 @@ def deduplicate_texts(texts: list[str]) -> list[str]:
 
 def process_video(
     record: dict,
-    model: str,
-    ollama_url: str,
     fps: float,
     max_frames: int,
     dedup: bool,
@@ -146,7 +129,7 @@ def process_video(
         for timestamp, frame_path in frames:
             b64 = image_to_base64(frame_path)
             try:
-                text = query_ollama(b64, model, ollama_url)
+                text = query_llm(b64)
             except RuntimeError as e:
                 print(f'  frame {timestamp:.1f}s error: {e}', file=sys.stderr)
                 text = ''
@@ -162,24 +145,11 @@ def process_video(
         return {'combined': combined, 'raw_frames': raw_frames}
 
 
-def check_ollama(ollama_url: str) -> bool:
-    try:
-        urllib.request.urlopen(f'{ollama_url}/api/tags', timeout=5)
-        return True
-    except Exception:
-        return False
-
-
 def main():
     parser = argparse.ArgumentParser(
-        description='Extract on-screen text from videos using ollama vision'
+        description='Extract on-screen text from videos using LLM vision'
     )
     parser.add_argument('--input', metavar='FILE', default='data/analysis.json')
-    parser.add_argument('--model', default=DEFAULT_MODEL,
-                        help='Ollama vision model (default: gemma3:4b). '
-                             'Must support vision: gemma3:4b, llava:7b, moondream. '
-                             'Text-only models (gemma2, llama3) do NOT work.')
-    parser.add_argument('--ollama-url', default=DEFAULT_OLLAMA_URL)
     parser.add_argument('--fps', type=float, default=0.5,
                         help='Frames per second to extract (default: 0.5 = 1 frame per 2s)')
     parser.add_argument('--max-frames', type=int, default=30,
@@ -211,15 +181,7 @@ def main():
         print('Nothing to process.')
         return
 
-    print(f'Checking ollama at {args.ollama_url}...')
-    if not check_ollama(args.ollama_url):
-        print(f'Error: ollama not reachable at {args.ollama_url}', file=sys.stderr)
-        print('Install: https://ollama.com/download', file=sys.stderr)
-        print(f'Then run: ollama pull {args.model}', file=sys.stderr)
-        sys.exit(1)
-    print('ollama OK')
-
-    print(f'Model: {args.model}, fps: {args.fps}, max_frames: {args.max_frames}')
+    print(f'fps: {args.fps}, max_frames: {args.max_frames}')
     print(f'Processing {len(to_process)} records...')
 
     for i, record in enumerate(to_process, 1):
@@ -232,7 +194,7 @@ def main():
 
         try:
             st = process_video(
-                record, args.model, args.ollama_url,
+                record,
                 args.fps, args.max_frames, not args.no_dedup,
             )
             record['screen_text'] = st
