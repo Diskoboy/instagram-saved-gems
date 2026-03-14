@@ -1,65 +1,37 @@
 # Instagram Saved Gems
 
-Два независимых инструмента в одном репозитории:
-
-Вытаскивает сохранённые посты из Instagram и помогает понять, зачем ты их сохранял — что в них важного и ценного.
-
-1. **Instagram Archive** — архивирует сохранённые посты из Instagram-экспорта: скачивает медиа, генерирует превью, категоризирует через Claude AI, строит веб-галерею и экспортирует в Obsidian.
-2. **Video Analysis** — анализирует видео из любого источника: транскрибирует аудио (faster-whisper), извлекает текст с экрана (ollama vision), строит HTML-отчёт по инструментам и смыслу контента.
+Скачивает все посты из Instagram, которые ты сохранил. Каждый пост — отдельная папка с медиа. Опционально: AI-анализ — транскрипция, OCR, категоризация — и веб-галерея с фильтрами.
 
 ## Как это работает
 
-### Instagram Archive Pipeline
+### Уровень 1 — скачать
 
 ```
 saved_posts.html
-       │
-       ▼
-   parser.py  ──►  data/links.json
-       │
-       ▼
-   fetch.py   ──►  content/<id>/  +  data/posts.json
-       │
-       ▼
- thumbnailer.py ──►  content/<id>/thumbnail.jpg
-       │
-       ▼
- categorizer.py ──►  data/posts.json (с категориями)
-       │
-       ▼
-  builder.py  ──►  html/index.html  +  html/data/posts.js
-       │
-       ▼
-obsidian_export.py ──►  obsidian/*.md
+    → parser.py  → data/links.json
+    → fetch.py   → content/{id}/   (фото, видео, reels)
+                   data/posts/{id}/meta.json
 ```
 
-**thumbnailer.py** — отдельный шаг после `fetch`: извлекает первый кадр из видео (ffmpeg) или скачивает превью через Instagram API, если yt-dlp не вернул thumbnail. Без этого шага галерея работает, но медленнее (браузер загружает полные видео вместо превью).
+Всё. Больше ничего не нужно — медиа лежат по папкам.
 
-### Video Analysis Pipeline
+### Уровень 2 — понять (опционально, нужен LLM)
 
 ```
-URL / mp4-файлы / posts.json
-       │
-       ▼
- fetcher.py  ──►  content_analysis/<id>/video.mp4  +  data/analysis.json
-       │
-       ▼
-transcriber.py ──►  data/analysis.json (+ transcription: text, language)
-       │
-       ▼
-   ocr.py   ──►  data/analysis.json (+ screen_text: combined)
-       │
-       ▼
-reporter.py  ──►  html/analysis.html
+content/{id}/
+    → thumbnailer.py    → content/{id}/thumbnail.jpg
+    → transcriber.py    → data/posts/{id}/transcription.json  (видео → текст)
+    → ocr.py            → data/posts/{id}/ocr.json            (текст с экрана)
+    → enricher.py       → data/posts/{id}/enriched.json       (категория / инсайт / шаги)
+    → builder.py        → html/index.html  (галерея с фильтрами)
+    → obsidian_export.py → obsidian/*.md
 ```
 
 ## Требования
 
-- Python 3.11+
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — устанавливается через `setup.sh`
-- [ffmpeg](https://ffmpeg.org/) — для извлечения превью из видео (`thumbnailer`)
-- Firefox **или** Chrome с залогиненным Instagram
-- [Claude CLI](https://github.com/anthropics/claude-code) (`claude` в PATH) — только для шага `categorize`
+**Уровень 1:** Python 3.11+, yt-dlp, Firefox или Chrome с залогиненным Instagram
+
+**Уровень 2:** + ffmpeg; LLM: Ollama (локально) **ИЛИ** OpenRouter API key **ИЛИ** Anthropic API key
 
 ### Платформы
 
@@ -186,86 +158,42 @@ INSTA_PASS=your_password
 ## Запуск
 
 ```bash
-# Полный pipeline (все шаги)
-python run.py
+# Просто скачать все сохранённые посты:
+python run.py --only extract     # HTML → links.json
+python run.py --only fetch       # скачать медиа → content/{id}/
 
-# Отдельные шаги
-python run.py --only extract     # HTML → data/links.json
-python run.py --only fetch       # скачать медиа → content/ + data/posts.json
-python run.py --only thumbnails  # сгенерировать превью → content/<id>/thumbnail.jpg
-python run.py --only categorize  # категоризировать через Claude AI
+# Полный pipeline с AI-анализом и галереей:
+python run.py                    # extract → fetch → thumbnails → enrich → build → obsidian
+
+# Отдельные шаги:
+python run.py --only thumbnails  # превью из видео
+python run.py --only enrich      # AI-анализ (нужен LLM_PROVIDER)
 python run.py --only build       # собрать html/index.html
-python run.py --only obsidian    # экспорт в obsidian/
+python run.py --only obsidian    # экспорт в Obsidian
 
-# Повторный прогон только ошибочных постов
-.venv/bin/python scripts/fetch.py --retry-errors
-
-# Пересчитать категории заново
-.venv/bin/python scripts/categorizer.py --force
+.venv/bin/python scripts/fetch.py --retry-errors   # повторить ошибки
+.venv/bin/python scripts/enricher.py --force        # пересчитать анализ
 ```
 
 После запуска открой `html/index.html` в браузере.
 
-## Video Analysis Pipeline
+## Конфигурация LLM
 
-Анализирует видео из любого источника — не только Instagram. Извлекает смысл: о чём говорится, какие инструменты упоминаются, что написано на экране.
-
-### Требования
-
-- [ffmpeg](https://ffmpeg.org/) — для извлечения кадров (уже нужен для основного pipeline)
-- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — транскрипция аудио локально
-- [ollama](https://ollama.com/) + vision-модель — OCR текста с экрана и анализ
-
-```bash
-# Установить faster-whisper
-pip install -r requirements_analysis.txt
-
-# Установить ollama (Linux/macOS)
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Скачать vision-модель (поддерживает работу с изображениями)
-ollama pull gemma3:4b
-```
-
-> **Windows:** ollama — установщик с [ollama.com/download](https://ollama.com/download). ffmpeg — скачай с [github.com/BtbN/FFmpeg-Builds/releases](https://github.com/BtbN/FFmpeg-Builds/releases), распакуй `ffmpeg.exe` и `ffprobe.exe` в папку `bin/` проекта — скрипт найдёт автоматически.
-
-> **Важно:** для OCR нужна vision-capable модель: `gemma3:4b`, `llava:7b`, `moondream`. Текстовые модели (`gemma2`, `llama3`) не поддерживают изображения.
-
-### Запуск
-
-```bash
-# Полный pipeline: скачать → транскрибировать → OCR → отчёт
-python run_analysis.py --from-posts data/posts.json   # из Instagram-архива
-python run_analysis.py --urls-file urls.txt           # из текстового файла с URL
-python run_analysis.py --local-dir /path/to/videos    # из локальной папки
-
-# Отдельные шаги
-python run_analysis.py --only fetch       # только скачать видео
-python run_analysis.py --only transcribe  # только транскрипция
-python run_analysis.py --only ocr         # только OCR экрана
-python run_analysis.py --only report      # только собрать отчёт
-
-# Без LLM-анализа (просто сырые данные в HTML)
-python run_analysis.py --only report --no-llm
-
-# Выбор моделей
-python run_analysis.py --model-whisper small --model-ollama llava:7b
-```
-
-После запуска открой `html/analysis.html` в браузере.
-
-### Конфигурация Video Analysis
+Нужна только для шага `enrich`. Выбери одного провайдера:
 
 | Переменная | Описание | По умолчанию |
 |---|---|---|
-| `OLLAMA_URL` | URL ollama сервера | `http://localhost:11434` |
-| `OLLAMA_MODEL` | Vision-модель для OCR и анализа | `gemma3:4b` |
-| `WHISPER_MODEL` | Размер модели: `tiny` / `base` / `small` / `medium` / `large-v3` | `base` |
-| `WHISPER_DEVICE` | Устройство: `auto` / `cpu` / `cuda` | `auto` |
-| `WHISPER_COMPUTE_TYPE` | Точность: `int8` (CPU) / `float16` (GPU) | `int8` |
-| `FFMPEG_PATH` | Путь к ffmpeg (если не в PATH и не в `bin/`) | — |
+| `LLM_PROVIDER` | Провайдер: `ollama` / `openrouter` / `claude` | `ollama` |
+| `OLLAMA_URL` | URL ollama | `http://localhost:11434` |
+| `OLLAMA_MODEL` | Модель ollama (нужна vision для OCR) | `gemma3:4b` |
+| `OPENROUTER_API_KEY` | API-ключ OpenRouter | — |
+| `OPENROUTER_MODEL` | Модель OpenRouter | `openai/gpt-4o-mini` |
+| `ANTHROPIC_API_KEY` | API-ключ Anthropic | — |
+| `ANTHROPIC_MODEL` | Модель Claude | `claude-haiku-4-5-20251001` |
 
-## Конфигурация Instagram Archive
+> Для OCR нужна vision-capable модель: `gemma3:4b`, `llava:7b`, `moondream`. Текстовые модели не поддерживают изображения.
+
+## Конфигурация Instagram
 
 Скопируй `.env.example` в `.env` и заполни нужные поля:
 
@@ -280,50 +208,38 @@ python run_analysis.py --model-whisper small --model-ollama llava:7b
 ## Структура проекта
 
 ```
-instagram-post-analyzer/
+instagram-saved-gems/
 ├── scripts/
 │   ├── parser.py           # парсит HTML-экспорт Instagram → links.json
 │   ├── fetch.py            # скачивает медиа через yt-dlp + Instagram API
 │   ├── thumbnailer.py      # генерирует превью (ffmpeg + Instagram API)
-│   ├── categorizer.py      # категоризирует через Claude AI
+│   ├── transcriber.py      # транскрибирует аудио → transcription.json
+│   ├── ocr.py              # извлекает текст с экрана → ocr.json
+│   ├── enricher.py         # AI-анализ → enriched.json (категория / инсайт / шаги)
+│   ├── store.py            # хранилище данных per-post
 │   ├── builder.py          # строит html/index.html галерею
-│   ├── obsidian_export.py  # экспортирует в Obsidian markdown
-│   └── analysis/
-│       ├── fetcher.py      # скачивает видео из URL / локальных файлов / posts.json
-│       ├── transcriber.py  # транскрибирует аудио через faster-whisper
-│       ├── ocr.py          # извлекает текст с экрана через ollama vision
-│       └── reporter.py     # строит html/analysis.html отчёт
+│   └── obsidian_export.py  # экспортирует в Obsidian markdown
 ├── data/
 │   ├── links.json          # спарсенные ссылки (генерируется)
-│   ├── posts.json          # данные постов с категориями (генерируется)
-│   ├── categories.json     # индекс категорий (генерируется)
-│   └── analysis.json       # результаты анализа видео (генерируется)
+│   └── posts/
+│       └── {id}/
+│           ├── meta.json           # fetch.py
+│           ├── transcription.json  # transcriber.py
+│           ├── ocr.json            # ocr.py
+│           └── enriched.json       # enricher.py
 ├── content/                # скачанные медиафайлы Instagram (генерируется, не в git)
-├── content_analysis/       # скачанные видео для анализа (генерируется, не в git)
 ├── html/
-│   ├── index.html          # веб-галерея Instagram (генерируется)
-│   ├── analysis.html       # отчёт по видео (генерируется)
+│   ├── index.html          # веб-галерея (генерируется)
 │   └── data/posts.js       # данные для галереи (генерируется, не в git)
 ├── obsidian/               # Obsidian-заметки (генерируется, не в git)
 ├── bin/                    # локальные бинарники (не в git)
 │   └── ffmpeg.exe          # Windows: положить руками
-├── run.py                  # оркестратор Instagram pipeline
-├── run_analysis.py         # оркестратор Video Analysis pipeline
-├── requirements.txt        # зависимости Instagram pipeline
-├── requirements_analysis.txt  # зависимости Video Analysis pipeline
+├── run.py                  # оркестратор pipeline
+├── requirements.txt        # зависимости
 ├── setup.sh                # скрипт установки (Linux/macOS)
 ├── .env.example            # шаблон конфигурации
 └── saved_posts.html        # экспорт из Instagram (не в git)
 ```
-
-## Оптимизации (для контрибьюторов)
-
-- **Параллельное скачивание** — `fetch.py` сейчас последовательный; `asyncio` + `ThreadPoolExecutor` ускорит в N раз
-- **Кэш Instagram API** — повторные запросы к одному посту можно кэшировать в `data/api_cache.json`
-- **Инкрементальный thumbnailer** — сейчас пропускает уже готовые превью, но не проверяет их валидность (размер > 0)
-- **Веб-интерфейс** — `html/index.html` — статика; можно добавить локальный HTTP-сервер для корректной работы путей
-- **Категоризация батчами** — сейчас один пост = один вызов Claude; можно группировать по 10-20 для ускорения
-- **Windows-поддержка yt-dlp** — Chrome cookies на Windows могут быть зашифрованы DPAPI; нужен тест на нативном Windows
 
 ## Troubleshooting
 
@@ -342,9 +258,9 @@ instagram-post-analyzer/
 .venv/bin/python scripts/fetch.py --retry-errors
 ```
 
-**Категории слетели / нужно пересчитать:**
+**AI-анализ не запускается / нужно пересчитать:**
 ```bash
-.venv/bin/python scripts/categorizer.py --force
+.venv/bin/python scripts/enricher.py --force
 ```
 
 **Превью не отображаются:**

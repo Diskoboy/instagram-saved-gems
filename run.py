@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Instagram Save-Inst Pipeline
+Instagram Saved Gems Pipeline
 
 Usage:
   python run.py                          # full pipeline
   python run.py --only extract           # only parse HTML → links.json
   python run.py --only fetch             # only download media
   python run.py --only thumbnails        # only extract/download thumbnails
-  python run.py --only categorize        # only categorize posts
+  python run.py --only enrich            # only AI-enrich posts (needs LLM_PROVIDER)
   python run.py --only build             # only build HTML gallery
   python run.py --only obsidian          # only export to Obsidian
 """
@@ -23,7 +23,7 @@ STEPS = {
     'extract': 'scripts/parser.py',
     'fetch': 'scripts/fetch.py',
     'thumbnails': 'scripts/thumbnailer.py',
-    'categorize': 'scripts/categorizer.py',
+    'enrich': 'scripts/enricher.py',
     'build': 'scripts/builder.py',
     'obsidian': 'scripts/obsidian_export.py',
 }
