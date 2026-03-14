@@ -5,8 +5,12 @@ LLM-абстракция: ollama / openrouter / claude
 Провайдер выбирается через LLM_PROVIDER (default: ollama).
 """
 import os
+from pathlib import Path
 
+from dotenv import load_dotenv
 import requests
+
+load_dotenv(Path(__file__).parent.parent / '.env')
 
 LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'ollama')
 

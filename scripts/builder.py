@@ -4,6 +4,7 @@ data/posts/{id}/ → html/index.html
 Alpine.js + Tailwind CSS
 """
 import copy
+import json
 import sys
 from pathlib import Path
 
