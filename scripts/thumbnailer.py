@@ -1,41 +1,41 @@
 """
 Извлекает thumbnail из видеопостов (reel/video) через ffmpeg.
-Сохраняет content/{id}/thumbnail.jpg и обновляет data/posts.json.
+Сохраняет content/{id}/thumbnail.jpg и обновляет meta.json.
 """
-import json
 import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+from store import all_post_ids, load_meta, save_meta  # noqa: E402
+
 
 def main():
-    posts_path = Path('data/posts.json')
-    if not posts_path.exists():
-        print('data/posts.json not found.')
-        sys.exit(1)
-
-    posts: list[dict] = json.loads(posts_path.read_text(encoding='utf-8'))
+    ids = all_post_ids()
     updated = 0
 
-    for i, post in enumerate(posts, 1):
+    for i, pid in enumerate(ids, 1):
+        post = load_meta(pid)
+        if not post:
+            continue
         if post.get('fetch_error'):
             continue
         if post.get('type') not in ('reel', 'video'):
             continue
 
-        thumb_path = Path(f'content/{post["id"]}/thumbnail.jpg')
+        thumb_path = Path(f'content/{pid}/thumbnail.jpg')
 
         if post.get('thumbnail') and thumb_path.exists():
-            print(f'[{i}] {post["id"]} already has thumbnail, skipping')
+            print(f'[{i}] {pid} already has thumbnail, skipping')
             continue
 
-        mp4_files = list(Path(f'content/{post["id"]}').glob('*.mp4'))
+        mp4_files = list(Path(f'content/{pid}').glob('*.mp4'))
         if not mp4_files:
-            print(f'[{i}] {post["id"]} no mp4 found, skipping')
+            print(f'[{i}] {pid} no mp4 found, skipping')
             continue
 
         mp4 = mp4_files[0]
-        print(f'[{i}] {post["id"]} extracting thumbnail from {mp4.name}…')
+        print(f'[{i}] {pid} extracting thumbnail from {mp4.name}…')
 
         result = subprocess.run(
             [
@@ -51,13 +51,13 @@ def main():
         )
 
         if result.returncode == 0 and thumb_path.exists():
-            post['thumbnail'] = f'content/{post["id"]}/thumbnail.jpg'
+            post['thumbnail'] = f'content/{pid}/thumbnail.jpg'
+            save_meta(pid, post)
             updated += 1
             print(f'  → saved {thumb_path}')
         else:
             print(f'  → ffmpeg failed (rc={result.returncode})', file=sys.stderr)
 
-    posts_path.write_text(json.dumps(posts, ensure_ascii=False, indent=2))
     print(f'\nDone. Thumbnails extracted: {updated}')
 
 

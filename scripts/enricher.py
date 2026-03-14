@@ -19,6 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from llm import ask  # noqa: E402
+from store import all_post_ids, load_meta, load_transcription, load_ocr, load_enriched, save_enriched  # noqa: E402
 
 ENRICH_PROMPT = """Analyze this Instagram post and return ONLY valid JSON.
 
@@ -136,10 +137,6 @@ def main():
     parser = argparse.ArgumentParser(
         description='Enrich Instagram posts with LLM: category, tools, insight, steps'
     )
-    parser.add_argument('--input', default='data/posts.json', metavar='FILE')
-    parser.add_argument('--analysis', default='data/analysis.json', metavar='FILE',
-                        help='Video analysis file (transcription + screen_text). Optional.')
-    parser.add_argument('--output', default='data/enriched.json', metavar='FILE')
     parser.add_argument('--force', action='store_true',
                         help='Re-process already enriched posts')
     parser.add_argument('--limit', type=int, default=0, metavar='N',
@@ -148,40 +145,18 @@ def main():
                         help='Process only these post IDs')
     args = parser.parse_args()
 
-    posts_path = Path(args.input)
-    if not posts_path.exists():
-        print(f'{args.input} not found. Run fetch.py first.', file=sys.stderr)
-        sys.exit(1)
-
-    posts: list[dict] = json.loads(posts_path.read_text(encoding='utf-8'))
-
-    # Load analysis if available
-    analysis_by_id: dict[str, dict] = {}
-    analysis_path = Path(args.analysis)
-    if analysis_path.exists():
-        analysis_list: list[dict] = json.loads(analysis_path.read_text(encoding='utf-8'))
-        analysis_by_id = {r['id']: r for r in analysis_list}
-
-    # Load existing enriched data
-    output_path = Path(args.output)
-    enriched_by_id: dict[str, dict] = {}
-    if output_path.exists() and not args.force:
-        existing: list[dict] = json.loads(output_path.read_text(encoding='utf-8'))
-        enriched_by_id = {r['id']: r for r in existing}
-
-    # Filter posts to process
     id_filter = set(args.ids) if args.ids else None
 
     to_process = []
-    for post in posts:
-        if post.get('fetch_error'):
+    for pid in all_post_ids():
+        meta = load_meta(pid)
+        if not meta or meta.get('fetch_error'):
             continue
-        pid = post['id']
         if id_filter and pid not in id_filter:
             continue
-        if pid in enriched_by_id and not args.force:
+        if not args.force and load_enriched(pid).get('category'):
             continue
-        to_process.append(post)
+        to_process.append((pid, meta))
 
     if args.limit and args.limit > 0:
         to_process = to_process[:args.limit]
@@ -191,32 +166,27 @@ def main():
     else:
         print(f'Processing {len(to_process)} posts (LLM_PROVIDER={__import__("os").getenv("LLM_PROVIDER","ollama")})...')
 
-    for i, post in enumerate(to_process, 1):
-        pid = post['id']
-        existing_cats = list(dict.fromkeys(
-            r['category'] for r in enriched_by_id.values()
-            if r.get('category')
-        ))
+    done_cats: list[str] = []
+    for i, (pid, post) in enumerate(to_process, 1):
+        existing_cats = list(dict.fromkeys(done_cats))
 
-        analysis = analysis_by_id.get(pid)
+        analysis = {
+            'transcription': load_transcription(pid),
+            'screen_text': load_ocr(pid),
+        }
         result, screen_label = enrich_post(post, analysis, existing_cats)
         print(f'[{i}/{len(to_process)}] {pid} (cats: {len(existing_cats)}){screen_label}')
 
-        enriched_by_id[pid] = {'id': pid, **result}
-
-        # Save after each post
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        enriched_list = list(enriched_by_id.values())
-        output_path.write_text(json.dumps(enriched_list, ensure_ascii=False, indent=2), encoding='utf-8')
+        save_enriched(pid, {'id': pid, **result})
+        if result.get('category'):
+            done_cats.append(result['category'])
 
         print(f'  [{result["category"]}] {result["insight"][:60]}')
         if result['steps']:
             print(f'  steps: {len(result["steps"])}')
 
-    total = len(enriched_by_id)
-    with_steps = sum(1 for r in enriched_by_id.values() if r.get('steps'))
-    cats = list(dict.fromkeys(r['category'] for r in enriched_by_id.values()))
-    print(f'\nDone. Total enriched: {total}. With steps: {with_steps}. Categories: {cats}')
+    total = sum(1 for pid in all_post_ids() if load_enriched(pid).get('category'))
+    print(f'\nDone. Total enriched: {total}')
 
 
 if __name__ == '__main__':

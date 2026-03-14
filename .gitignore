@@ -32,11 +32,8 @@ saved_collections.html
 
 # Генерируемые данные Instagram pipeline
 content/
-data/posts.json
+data/posts/
 data/links.json
-data/categories.json
-data/tools.json
-data/values.json
 obsidian/
 html/index.html
 html/data/posts.js
@@ -44,7 +41,6 @@ html/data/posts.js
 
 # Генерируемые данные Video Analysis pipeline
 content_analysis/
-data/analysis.json
 html/analysis.html
 
 # Локальные бинарники (ffmpeg для Windows — положи руками в bin/)

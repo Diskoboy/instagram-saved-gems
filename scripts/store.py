@@ -1,0 +1,89 @@
+"""
+Per-post file storage.
+
+Layout:
+  data/posts/{id}/meta.json
+  data/posts/{id}/transcription.json
+  data/posts/{id}/ocr.json
+  data/posts/{id}/enriched.json
+"""
+import json
+from pathlib import Path
+from typing import Iterator
+
+DATA_DIR = Path('data/posts')
+
+
+def _atomic_write(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix('.json.tmp')
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    tmp.replace(path)
+
+
+def post_dir(pid: str) -> Path:
+    return DATA_DIR / pid
+
+
+def all_post_ids() -> list[str]:
+    if not DATA_DIR.exists():
+        return []
+    return sorted(p.name for p in DATA_DIR.iterdir() if p.is_dir())
+
+
+def load_meta(pid: str) -> dict | None:
+    path = post_dir(pid) / 'meta.json'
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
+def save_meta(pid: str, data: dict) -> None:
+    _atomic_write(post_dir(pid) / 'meta.json', data)
+
+
+def load_transcription(pid: str) -> dict:
+    path = post_dir(pid) / 'transcription.json'
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
+def save_transcription(pid: str, data: dict) -> None:
+    _atomic_write(post_dir(pid) / 'transcription.json', data)
+
+
+def load_ocr(pid: str) -> dict:
+    path = post_dir(pid) / 'ocr.json'
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
+def save_ocr(pid: str, data: dict) -> None:
+    _atomic_write(post_dir(pid) / 'ocr.json', data)
+
+
+def load_enriched(pid: str) -> dict:
+    path = post_dir(pid) / 'enriched.json'
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
+def save_enriched(pid: str, data: dict) -> None:
+    _atomic_write(post_dir(pid) / 'enriched.json', data)
+
+
+def iter_posts(with_enriched: bool = False) -> Iterator[dict]:
+    """Yield post dicts. If with_enriched=True, merges enriched.json into meta."""
+    for pid in all_post_ids():
+        meta = load_meta(pid)
+        if meta is None:
+            continue
+        if with_enriched:
+            enriched = load_enriched(pid)
+            if enriched:
+                yield {**meta, **enriched}
+                continue
+        yield meta

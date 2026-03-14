@@ -1,11 +1,14 @@
 """
-data/posts.json → html/index.html
+data/posts/{id}/ → html/index.html
 Галерея с 5 табами: Посты / Инструменты / Workflow / Категории / Недоступные
 Alpine.js + Tailwind CSS
 """
 import copy
-import json
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+from store import iter_posts  # noqa: E402
 
 
 HTML_TEMPLATE = r"""<!DOCTYPE html>
@@ -591,12 +594,7 @@ function app() {
 
 
 def main():
-    posts_path = Path('data/posts.json')
-    if not posts_path.exists():
-        print('data/posts.json not found.')
-        return
-
-    posts = json.loads(posts_path.read_text(encoding='utf-8'))
+    posts = list(iter_posts(with_enriched=True))
 
     # Write posts.js — media paths need ../ prefix because index.html is in html/
     display_posts = copy.deepcopy(posts)

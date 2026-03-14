@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from llm import ask  # noqa: E402
+from store import iter_posts  # noqa: E402
 
 SKILL_PROMPT = """Given an Instagram post, return ONLY valid JSON.
 
@@ -72,13 +73,8 @@ def _default() -> dict:
 
 
 def main():
-    posts_path = Path('data/posts.json')
-    if not posts_path.exists():
-        print('data/posts.json not found. Run fetch.py first.')
-        sys.exit(1)
-
     force = '--force' in sys.argv
-    posts: list[dict] = json.loads(posts_path.read_text(encoding='utf-8'))
+    posts: list[dict] = list(iter_posts(with_enriched=True))
 
     if force:
         print('--force: resetting all enrichment fields')
@@ -117,7 +113,6 @@ def main():
         post['workflow'] = result.get('workflow', [])
         post['insight'] = result.get('insight', '')
 
-        posts_path.write_text(json.dumps(posts, ensure_ascii=False, indent=2))
 
     # Build indexes
     cat_index: dict[str, list[str]] = {}

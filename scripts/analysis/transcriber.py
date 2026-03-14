@@ -1,6 +1,5 @@
 """
-Читает data/analysis.json, транскрибирует аудио через faster-whisper.
-Обновляет поле transcription для каждой записи.
+Транскрибирует аудио из видеопостов через faster-whisper.
 
 Usage:
   python scripts/analysis/transcriber.py
@@ -8,29 +7,16 @@ Usage:
   python scripts/analysis/transcriber.py --force --ids abc123 def456
 """
 import argparse
-import json
 import sys
 from pathlib import Path
 
-
-def load_analysis(path: Path) -> list[dict]:
-    if not path.exists():
-        print(f'{path} not found. Run fetcher.py first.', file=sys.stderr)
-        sys.exit(1)
-    return json.loads(path.read_text(encoding='utf-8'))
+ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(ROOT / 'scripts'))
+from store import all_post_ids, load_meta, load_transcription, save_transcription  # noqa: E402
 
 
-def save_analysis(data: list[dict], path: Path) -> None:
-    tmp = path.with_suffix('.json.tmp')
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
-    tmp.replace(path)
-
-
-def needs_transcription(record: dict) -> bool:
-    if record.get('error'):
-        return False
-    t = record.get('transcription', {})
-    return not t.get('text')
+def needs_transcription(pid: str) -> bool:
+    return not load_transcription(pid).get('text')
 
 
 def transcribe_file(model, video_path: Path, language: str | None) -> dict:
@@ -59,7 +45,6 @@ def transcribe_file(model, video_path: Path, language: str | None) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description='Transcribe audio from videos using faster-whisper')
-    parser.add_argument('--input', metavar='FILE', default='data/analysis.json')
     parser.add_argument('--model', default='base',
                         choices=['tiny', 'base', 'small', 'medium', 'large-v3'],
                         help='Whisper model size (default: base)')
@@ -76,20 +61,22 @@ def main():
                         help='Process only these record IDs')
     args = parser.parse_args()
 
-    analysis_path = Path(args.input)
-    records = load_analysis(analysis_path)
-
     id_filter = set(args.ids) if args.ids else None
+    all_ids = all_post_ids()
 
-    if args.force:
-        for r in records:
-            if id_filter is None or r['id'] in id_filter:
-                r['transcription'] = {'text': '', 'language': '', 'segments': []}
-
-    to_process = [
-        r for r in records
-        if needs_transcription(r) and (id_filter is None or r['id'] in id_filter)
-    ]
+    to_process = []
+    for pid in all_ids:
+        if id_filter and pid not in id_filter:
+            continue
+        meta = load_meta(pid)
+        if not meta or meta.get('fetch_error'):
+            continue
+        mp4_files = [m for m in meta.get('media', []) if m.endswith('.mp4')]
+        if not mp4_files:
+            continue
+        if not args.force and not needs_transcription(pid):
+            continue
+        to_process.append((pid, mp4_files[0]))
 
     if not to_process:
         print('Nothing to transcribe.')
@@ -113,28 +100,25 @@ def main():
     model = WhisperModel(args.model, device=device, compute_type=args.compute_type)
     print(f'Model loaded on {device}. Processing {len(to_process)} records...')
 
-    for i, record in enumerate(to_process, 1):
-        print(f'[{i}/{len(to_process)}] {record["id"]}')
+    done = 0
+    for i, (pid, local_path) in enumerate(to_process, 1):
+        print(f'[{i}/{len(to_process)}] {pid}')
 
-        local_path = record.get('local_path')
-        if not local_path or not Path(local_path).exists():
+        if not Path(local_path).exists():
             print('  no video file, skipping', file=sys.stderr)
             continue
 
         try:
             result = transcribe_file(model, Path(local_path), args.language)
-            record['transcription'] = result
+            save_transcription(pid, result)
             preview = result['text'][:80]
             suffix = '...' if len(result['text']) > 80 else ''
             print(f'  [{result["language"]}] {preview}{suffix}')
+            done += 1
         except Exception as e:
             print(f'  error: {e}', file=sys.stderr)
-            record['error'] = f'transcription error: {e}'
 
-        save_analysis(records, analysis_path)
-
-    ok = sum(1 for r in records if r.get('transcription', {}).get('text'))
-    print(f'\nDone. Transcribed: {ok}/{len(records)}')
+    print(f'\nDone. Transcribed: {done}/{len(to_process)}')
 
 
 if __name__ == '__main__':

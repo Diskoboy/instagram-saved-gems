@@ -1,8 +1,11 @@
 """
-data/posts.json → obsidian/<post_id>.md
+data/posts/{id}/ → obsidian/<post_id>.md
 """
-import json
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+from store import iter_posts  # noqa: E402
 
 
 TEMPLATE = """\
@@ -39,12 +42,7 @@ def format_embeds(media: list[str]) -> str:
 
 
 def main():
-    posts_path = Path('data/posts.json')
-    if not posts_path.exists():
-        print('data/posts.json not found.')
-        return
-
-    posts: list[dict] = json.loads(posts_path.read_text(encoding='utf-8'))
+    posts = list(iter_posts(with_enriched=True))
     out_dir = Path('obsidian')
     out_dir.mkdir(exist_ok=True)
 

@@ -12,6 +12,9 @@ import sys
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+from store import load_meta, save_meta, all_post_ids  # noqa: E402
+
 YTDLP = str(Path(__file__).parent.parent / '.venv/bin/yt-dlp')
 FIREFOX_PROFILE = os.environ.get('FIREFOX_PROFILE', str(Path.home() / 'snap/firefox/common/.mozilla/firefox'))
 BROWSER = os.environ.get('BROWSER', 'firefox')
@@ -227,15 +230,12 @@ def main():
     content_dir = Path('content')
     content_dir.mkdir(exist_ok=True)
 
-    posts_path = Path('data/posts.json')
-    existing: dict[str, dict] = {}
-    if posts_path.exists():
-        for p in json.loads(posts_path.read_text(encoding='utf-8')):
-            existing[p['id']] = p
+    existing: dict[str, dict] = {pid: load_meta(pid) for pid in all_post_ids()}
 
     retry_errors = '--retry-errors' in sys.argv
 
-    posts: list[dict] = []
+    ok = 0
+    err = 0
     for i, link in enumerate(links, 1):
         post_id = link['id']
         print(f'[{i}/{len(links)}] {post_id}')
@@ -245,11 +245,11 @@ def main():
             # Skip if success, or if error and not in retry mode
             if not prev.get('fetch_error'):
                 print('  already fetched, skipping')
-                posts.append(prev)
+                ok += 1
                 continue
             if prev.get('fetch_error') and not retry_errors:
                 print('  previous error, skipping (use --retry-errors to retry)')
-                posts.append(prev)
+                err += 1
                 continue
 
         meta = download_post(link['url'], post_id, content_dir)
@@ -265,6 +265,7 @@ def main():
                 'media': [],
                 'fetch_error': True,
             }
+            err += 1
         else:
             media_files = [Path(m) for m in meta['media']]
             post = {
@@ -279,14 +280,11 @@ def main():
             }
             if meta.get('thumbnail'):
                 post['thumbnail'] = meta['thumbnail']
+            ok += 1
 
-        posts.append(post)
-        posts_path.write_text(json.dumps(posts, ensure_ascii=False, indent=2))
+        save_meta(post_id, post)
 
-    posts_path.write_text(json.dumps(posts, ensure_ascii=False, indent=2))
-    ok = sum(1 for p in posts if not p.get('fetch_error'))
-    err = sum(1 for p in posts if p.get('fetch_error'))
-    print(f'\nDone. {ok} OK, {err} errors → {posts_path}')
+    print(f'\nDone. {ok} OK, {err} errors → data/posts/')
 
 
 if __name__ == '__main__':

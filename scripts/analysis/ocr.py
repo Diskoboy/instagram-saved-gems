@@ -22,6 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
 from llm import ask  # noqa: E402
+from store import all_post_ids, load_meta, load_ocr, save_ocr  # noqa: E402
 
 DEFAULT_OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
 DEFAULT_MODEL = os.environ.get('OLLAMA_MODEL', 'gemma3:4b')
@@ -33,24 +34,8 @@ OCR_PROMPT = (
 )
 
 
-def load_analysis(path: Path) -> list[dict]:
-    if not path.exists():
-        print(f'{path} not found. Run fetcher.py first.', file=sys.stderr)
-        sys.exit(1)
-    return json.loads(path.read_text(encoding='utf-8'))
-
-
-def save_analysis(data: list[dict], path: Path) -> None:
-    tmp = path.with_suffix('.json.tmp')
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
-    tmp.replace(path)
-
-
-def needs_ocr(record: dict) -> bool:
-    if record.get('error'):
-        return False
-    st = record.get('screen_text', {})
-    return not st.get('combined')
+def needs_ocr(pid: str) -> bool:
+    return not load_ocr(pid).get('combined')
 
 
 def _ffmpeg_bin() -> str:
@@ -111,12 +96,11 @@ def deduplicate_texts(texts: list[str]) -> list[str]:
 
 
 def process_video(
-    record: dict,
+    local_path: Path,
     fps: float,
     max_frames: int,
     dedup: bool,
 ) -> dict:
-    local_path = Path(record['local_path'])
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
@@ -149,7 +133,6 @@ def main():
     parser = argparse.ArgumentParser(
         description='Extract on-screen text from videos using LLM vision'
     )
-    parser.add_argument('--input', metavar='FILE', default='data/analysis.json')
     parser.add_argument('--fps', type=float, default=0.5,
                         help='Frames per second to extract (default: 0.5 = 1 frame per 2s)')
     parser.add_argument('--max-frames', type=int, default=30,
@@ -162,20 +145,21 @@ def main():
                         help='Disable text deduplication between frames')
     args = parser.parse_args()
 
-    analysis_path = Path(args.input)
-    records = load_analysis(analysis_path)
-
     id_filter = set(args.ids) if args.ids else None
 
-    if args.force:
-        for r in records:
-            if id_filter is None or r['id'] in id_filter:
-                r['screen_text'] = {'combined': '', 'raw_frames': []}
-
-    to_process = [
-        r for r in records
-        if needs_ocr(r) and (id_filter is None or r['id'] in id_filter)
-    ]
+    to_process = []
+    for pid in all_post_ids():
+        if id_filter and pid not in id_filter:
+            continue
+        meta = load_meta(pid)
+        if not meta or meta.get('fetch_error'):
+            continue
+        mp4_files = [m for m in meta.get('media', []) if m.endswith('.mp4')]
+        if not mp4_files:
+            continue
+        if not args.force and not needs_ocr(pid):
+            continue
+        to_process.append((pid, mp4_files[0]))
 
     if not to_process:
         print('Nothing to process.')
@@ -184,31 +168,29 @@ def main():
     print(f'fps: {args.fps}, max_frames: {args.max_frames}')
     print(f'Processing {len(to_process)} records...')
 
-    for i, record in enumerate(to_process, 1):
-        print(f'[{i}/{len(to_process)}] {record["id"]}')
+    done = 0
+    for i, (pid, local_path_str) in enumerate(to_process, 1):
+        print(f'[{i}/{len(to_process)}] {pid}')
 
-        local_path = record.get('local_path')
-        if not local_path or not Path(local_path).exists():
+        local_path = Path(local_path_str)
+        if not local_path.exists():
             print('  no video file, skipping', file=sys.stderr)
             continue
 
         try:
             st = process_video(
-                record,
+                local_path,
                 args.fps, args.max_frames, not args.no_dedup,
             )
-            record['screen_text'] = st
+            save_ocr(pid, st)
             preview = st['combined'][:100].replace('\n', ' ')
             suffix = '...' if len(st['combined']) > 100 else ''
             print(f'  {len(st["raw_frames"])} frames → "{preview}{suffix}"')
+            done += 1
         except Exception as e:
             print(f'  error: {e}', file=sys.stderr)
-            record['error'] = f'ocr error: {e}'
 
-        save_analysis(records, analysis_path)
-
-    ok = sum(1 for r in records if r.get('screen_text', {}).get('combined'))
-    print(f'\nDone. Processed: {ok}/{len(records)}')
+    print(f'\nDone. Processed: {done}/{len(to_process)}')
 
 
 if __name__ == '__main__':
