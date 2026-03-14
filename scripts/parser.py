@@ -1,6 +1,11 @@
 """
 Парсит saved_posts.html и saved_collections.html → data/links.json
+
+Usage:
+  python scripts/parser.py                         # из HTML-файлов
+  python scripts/parser.py --txt inst.txt          # из текстового файла со ссылками
 """
+import argparse
 import json
 import re
 from pathlib import Path
@@ -71,23 +76,48 @@ def parse_saved_collections(filepath: Path) -> list[dict]:
     return posts
 
 
+def parse_txt(filepath: Path) -> list[dict]:
+    posts = []
+    with open(filepath, encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            post_id = extract_post_id(line)
+            if not post_id:
+                continue
+            post_type = 'reel' if '/reel/' in line else 'p'
+            clean_url = f'https://www.instagram.com/{post_type}/{post_id}/'
+            posts.append({'id': post_id, 'url': clean_url, 'author': '', 'saved_at': ''})
+    return posts
+
+
 def main():
+    parser = argparse.ArgumentParser(description='Parse Instagram saved links')
+    parser.add_argument('--txt', metavar='FILE', help='Text file with Instagram URLs (one per line)')
+    args = parser.parse_args()
+
     base = Path('.')
     all_posts: list[dict] = []
 
-    if (p := base / 'saved_posts.html').exists():
-        found = parse_saved_posts(p)
-        print(f'saved_posts.html: {len(found)} posts')
+    if args.txt:
+        found = parse_txt(Path(args.txt))
+        print(f'{args.txt}: {len(found)} posts')
         all_posts.extend(found)
     else:
-        print('saved_posts.html not found, skipping')
+        if (p := base / 'saved_posts.html').exists():
+            found = parse_saved_posts(p)
+            print(f'saved_posts.html: {len(found)} posts')
+            all_posts.extend(found)
+        else:
+            print('saved_posts.html not found, skipping')
 
-    if (p := base / 'saved_collections.html').exists():
-        found = parse_saved_collections(p)
-        print(f'saved_collections.html: {len(found)} posts')
-        all_posts.extend(found)
-    else:
-        print('saved_collections.html not found, skipping')
+        if (p := base / 'saved_collections.html').exists():
+            found = parse_saved_collections(p)
+            print(f'saved_collections.html: {len(found)} posts')
+            all_posts.extend(found)
+        else:
+            print('saved_collections.html not found, skipping')
 
     # Deduplicate by url, keep first occurrence
     seen: set[str] = set()

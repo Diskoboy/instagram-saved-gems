@@ -1,22 +1,21 @@
 """
-Читает data/analysis.json, извлекает текст с экрана через ollama (vision).
-Обновляет поле screen_text для каждой записи.
+OCR для всех постов:
+- image/carousel: читает jpg/png картинки через ollama vision
+- reel/video: извлекает кадры из mp4 через ffmpeg, затем OCR
 
 Usage:
   python scripts/analysis/ocr.py
-  python scripts/analysis/ocr.py --model llava:7b --fps 1
-  python scripts/analysis/ocr.py --ollama-url http://localhost:11434
+  python scripts/analysis/ocr.py --force
+  python scripts/analysis/ocr.py --ids ID1 ID2
 """
 import argparse
 import base64
-import json
-import os
-import platform
+import json as _json
+import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
-
 
 
 ROOT = Path(__file__).parent.parent.parent
@@ -24,8 +23,9 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 from llm import ask  # noqa: E402
 from store import all_post_ids, load_meta, load_ocr, save_ocr  # noqa: E402
 
-DEFAULT_OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
-DEFAULT_MODEL = os.environ.get('OLLAMA_MODEL', 'gemma3:4b')
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
+VIDEO_TYPES = {'reel', 'video'}
+IMAGE_TYPES = {'image', 'carousel'}
 
 OCR_PROMPT = (
     'Extract all text visible on screen in this image. '
@@ -38,115 +38,84 @@ def needs_ocr(pid: str) -> bool:
     return not load_ocr(pid).get('combined')
 
 
-def _ffmpeg_bin() -> str:
-    # 1. Явный путь через env
-    ffmpeg_path = os.environ.get('FFMPEG_PATH', '')
-    if ffmpeg_path:
-        return ffmpeg_path
-    # 2. Локальная папка bin/ в корне проекта (Windows: bin/ffmpeg.exe)
-    local = ROOT / 'bin' / ('ffmpeg.exe' if platform.system() == 'Windows' else 'ffmpeg')
-    if local.exists():
-        return str(local)
-    # 3. Системный PATH
-    return 'ffmpeg'
-
-
-def extract_frames(
-    video_path: Path,
-    tmp_dir: Path,
-    fps: float,
-    max_frames: int,
-) -> list[tuple[float, Path]]:
-    ffmpeg = _ffmpeg_bin()
-    output_pattern = str(tmp_dir / 'frame_%04d.jpg')
-
-    cmd = [
-        ffmpeg, '-y',
-        '-i', str(video_path),
-        '-vf', f'fps={fps}',
-        '-vframes', str(max_frames),
-        '-q:v', '3',
-        output_pattern,
-    ]
-
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-    if result.returncode != 0:
-        raise RuntimeError(f'ffmpeg error: {result.stderr[-200:]}')
-
-    frames = sorted(tmp_dir.glob('frame_*.jpg'))
-    return [(i / fps, frame) for i, frame in enumerate(frames)]
-
-
 def image_to_base64(path: Path) -> str:
     return base64.b64encode(path.read_bytes()).decode('ascii')
 
 
+def clean_ocr_text(text: str) -> str:
+    """Если ollama вернул JSON вместо plain text — извлечь строковые значения."""
+    text = text.strip()
+    if not text.startswith('{') and not text.startswith('['):
+        return text
+    try:
+        data = _json.loads(text)
+        parts = []
+
+        def extract(obj):
+            if isinstance(obj, str) and obj.strip():
+                parts.append(obj.strip())
+            elif isinstance(obj, dict):
+                for v in obj.values():
+                    extract(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    extract(item)
+
+        extract(data)
+        return ' '.join(parts)
+    except Exception:
+        return text
+
+
 def query_llm(base64_image: str) -> str:
-    return ask(OCR_PROMPT, image_b64=base64_image).strip()
+    return clean_ocr_text(ask(OCR_PROMPT, image_b64=base64_image).strip())
 
 
-def deduplicate_texts(texts: list[str]) -> list[str]:
-    if not texts:
-        return []
-    result = [texts[0]]
-    for text in texts[1:]:
-        if text.strip() and text.strip() != result[-1].strip():
-            result.append(text)
-    return result
+def process_images(image_paths: list[Path]) -> dict:
+    raw_frames = []
+    for idx, img_path in enumerate(image_paths):
+        if not img_path.exists():
+            print(f'  image not found: {img_path}', file=sys.stderr)
+            continue
+        b64 = image_to_base64(img_path)
+        try:
+            text = query_llm(b64)
+        except Exception as e:
+            print(f'  image {idx} error: {e}', file=sys.stderr)
+            text = ''
+        raw_frames.append({'image_index': idx, 'path': str(img_path), 'text': text})
+
+    combined = '\n\n'.join(f['text'] for f in raw_frames if f['text'].strip())
+    return {'combined': combined, 'raw_frames': raw_frames}
 
 
-def process_video(
-    local_path: Path,
-    fps: float,
-    max_frames: int,
-    dedup: bool,
-) -> dict:
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = Path(tmp_dir)
-
-        frames = extract_frames(local_path, tmp_path, fps, max_frames)
-        if not frames:
-            return {'combined': '', 'raw_frames': []}
-
-        raw_frames = []
-        for timestamp, frame_path in frames:
-            b64 = image_to_base64(frame_path)
-            try:
-                text = query_llm(b64)
-            except RuntimeError as e:
-                print(f'  frame {timestamp:.1f}s error: {e}', file=sys.stderr)
-                text = ''
-
-            if text:
-                raw_frames.append({'timestamp_sec': round(timestamp, 1), 'text': text})
-
-        texts = [f['text'] for f in raw_frames]
-        if dedup:
-            texts = deduplicate_texts(texts)
-        combined = '\n'.join(t for t in texts if t.strip())
-
-        return {'combined': combined, 'raw_frames': raw_frames}
+def extract_video_frames(mp4_path: Path, max_frames: int = 5) -> tuple[list[Path], Path]:
+    """Extract up to max_frames frames from video via ffmpeg. Returns (frames, tmp_dir)."""
+    tmp_dir = Path(tempfile.mkdtemp())
+    out_pattern = str(tmp_dir / 'frame_%03d.jpg')
+    subprocess.run(
+        ['ffmpeg', '-y', '-i', str(mp4_path),
+         '-vf', f'fps=1,scale=640:-1', '-frames:v', str(max_frames),
+         out_pattern],
+        capture_output=True,
+    )
+    frames = sorted(tmp_dir.glob('frame_*.jpg'))
+    return frames, tmp_dir
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Extract on-screen text from videos using LLM vision'
+        description='Extract on-screen text from images/video using LLM vision'
     )
-    parser.add_argument('--fps', type=float, default=0.5,
-                        help='Frames per second to extract (default: 0.5 = 1 frame per 2s)')
-    parser.add_argument('--max-frames', type=int, default=30,
-                        help='Max frames per video (default: 30)')
     parser.add_argument('--force', action='store_true',
                         help='Re-process already processed records')
     parser.add_argument('--ids', nargs='*', metavar='ID',
                         help='Process only these record IDs')
-    parser.add_argument('--no-dedup', action='store_true',
-                        help='Disable text deduplication between frames')
     args = parser.parse_args()
 
     id_filter = set(args.ids) if args.ids else None
 
+    # Each entry: (pid, source, 'image'|'video')
     to_process = []
     for pid in all_post_ids():
         if id_filter and pid not in id_filter:
@@ -154,41 +123,60 @@ def main():
         meta = load_meta(pid)
         if not meta or meta.get('fetch_error'):
             continue
-        mp4_files = [m for m in meta.get('media', []) if m.endswith('.mp4')]
-        if not mp4_files:
-            continue
+        post_type = meta.get('type', '')
         if not args.force and not needs_ocr(pid):
             continue
-        to_process.append((pid, mp4_files[0]))
+
+        if post_type in IMAGE_TYPES:
+            image_files = [
+                Path(m) for m in meta.get('media', [])
+                if Path(m).suffix.lower() in IMAGE_EXTENSIONS
+            ]
+            if not image_files:
+                continue
+            to_process.append((pid, image_files, 'image'))
+
+        elif post_type in VIDEO_TYPES:
+            mp4_files = [
+                Path(m) for m in meta.get('media', [])
+                if Path(m).suffix.lower() == '.mp4' and Path(m).exists()
+            ]
+            if not mp4_files:
+                continue
+            to_process.append((pid, mp4_files[0], 'video'))
 
     if not to_process:
         print('Nothing to process.')
         return
 
-    print(f'fps: {args.fps}, max_frames: {args.max_frames}')
     print(f'Processing {len(to_process)} records...')
 
     done = 0
-    for i, (pid, local_path_str) in enumerate(to_process, 1):
-        print(f'[{i}/{len(to_process)}] {pid}')
-
-        local_path = Path(local_path_str)
-        if not local_path.exists():
-            print('  no video file, skipping', file=sys.stderr)
-            continue
-
+    for i, (pid, source, kind) in enumerate(to_process, 1):
+        tmp_dir = None
         try:
-            st = process_video(
-                local_path,
-                args.fps, args.max_frames, not args.no_dedup,
-            )
-            save_ocr(pid, st)
-            preview = st['combined'][:100].replace('\n', ' ')
-            suffix = '...' if len(st['combined']) > 100 else ''
-            print(f'  {len(st["raw_frames"])} frames → "{preview}{suffix}"')
+            if kind == 'image':
+                print(f'[{i}/{len(to_process)}] {pid} ({len(source)} images)')
+                result = process_images(source)
+            else:
+                print(f'[{i}/{len(to_process)}] {pid} (video → frames)')
+                frames, tmp_dir = extract_video_frames(source)
+                if not frames:
+                    print(f'  no frames extracted', file=sys.stderr)
+                    continue
+                print(f'  extracted {len(frames)} frames')
+                result = process_images(frames)
+
+            save_ocr(pid, result)
+            preview = result['combined'][:100].replace('\n', ' ')
+            suffix = '...' if len(result['combined']) > 100 else ''
+            print(f'  → "{preview}{suffix}"')
             done += 1
         except Exception as e:
             print(f'  error: {e}', file=sys.stderr)
+        finally:
+            if tmp_dir and tmp_dir.exists():
+                shutil.rmtree(tmp_dir, ignore_errors=True)
 
     print(f'\nDone. Processed: {done}/{len(to_process)}')
 

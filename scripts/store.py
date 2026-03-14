@@ -8,8 +8,20 @@ Layout:
   data/posts/{id}/enriched.json
 """
 import json
+import re as _re
 from pathlib import Path
 from typing import Iterator
+
+_CODE_RE = _re.compile(
+    r'import |def |git |docker|npm |pip |apt |http|`|\$\s|\.py|\.sh|\.ts|\.js|={2,}',
+    _re.I,
+)
+
+
+def _low_overlap(screen: str, trans: str) -> bool:
+    s = set(screen.lower().split())
+    t = set(trans.lower().split())
+    return bool(s) and (len(s & t) / len(s)) < 0.6
 
 DATA_DIR = Path('data/posts')
 
@@ -81,9 +93,24 @@ def iter_posts(with_enriched: bool = False) -> Iterator[dict]:
         meta = load_meta(pid)
         if meta is None:
             continue
+        post = dict(meta)
         if with_enriched:
             enriched = load_enriched(pid)
             if enriched:
-                yield {**meta, **enriched}
-                continue
-        yield meta
+                post.update(enriched)
+        transcription = load_transcription(pid)
+        if transcription.get('text'):
+            post['transcription_text'] = transcription['text']
+
+        ocr = load_ocr(pid)
+        if ocr.get('combined'):
+            post_type = post.get('type', '')
+            screen = ocr['combined']
+            if post_type in ('image', 'carousel'):
+                post['ocr_text'] = screen
+            elif post_type in ('reel', 'video'):
+                trans = transcription.get('text', '')
+                if _CODE_RE.search(screen) or _low_overlap(screen, trans):
+                    post['ocr_text'] = screen
+
+        yield post

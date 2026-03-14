@@ -20,6 +20,17 @@ def main():
             continue
         if post.get('fetch_error'):
             continue
+        if post.get('type') == 'image':
+            media = post.get('media', [])
+            if media and Path(media[0]).exists():
+                post['thumbnail'] = media[0]
+                save_meta(pid, post)
+                updated += 1
+                print(f'[{i}] {pid} image → thumbnail = {media[0]}')
+            else:
+                print(f'[{i}] {pid} image but no media file found, skipping')
+            continue
+
         if post.get('type') not in ('reel', 'video'):
             continue
 

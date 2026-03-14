@@ -163,7 +163,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
               </template>
             </div>
           </template>
-          <div class="text-[10px] text-gray-400 line-clamp-2" x-text="post.insight"></div>
+          <div class="text-xs text-gray-300 line-clamp-3" x-text="post.core_idea || post.insight"></div>
         </div>
       </div>
     </template>
@@ -175,100 +175,49 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </main>
 
 <!-- ============================================================ TAB: TOOLS -->
-<main x-show="tab === 'tools'" class="p-4 max-w-3xl mx-auto">
-  <div class="space-y-2">
-    <template x-for="item in filteredTools" :key="item.tool">
-      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <button
-          class="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-800 transition text-left"
-          @click="item.open = !item.open"
-        >
-          <span class="font-medium text-white" x-text="item.tool"></span>
-          <div class="flex items-center gap-3">
-            <span class="text-sm text-pink-400 font-semibold" x-text="item.posts.length + ' постов'"></span>
-            <span class="text-gray-500 text-sm" x-text="item.open ? '▲' : '▼'"></span>
-          </div>
-        </button>
-        <template x-if="item.open">
-          <div class="border-t border-gray-800 p-3 space-y-2">
-            <template x-for="pid in item.posts" :key="pid">
-              <div
-                class="flex items-start gap-3 p-2 rounded-lg hover:bg-gray-800 cursor-pointer transition"
-                @click="openModalById(pid)"
-              >
-                <template x-if="getPost(pid) && getPost(pid).media && getPost(pid).media.length > 0">
-                  <template x-if="!isVideoSrc(getPost(pid).media[0])">
-                    <img :src="getPost(pid).media[0]" class="w-12 h-12 rounded object-cover flex-shrink-0" loading="lazy" />
-                  </template>
-                  <template x-if="isVideoSrc(getPost(pid).media[0]) && getPost(pid).thumbnail">
-                    <img :src="getPost(pid).thumbnail" class="w-12 h-12 rounded object-cover flex-shrink-0" loading="lazy" />
-                  </template>
-                  <template x-if="isVideoSrc(getPost(pid).media[0]) && !getPost(pid).thumbnail">
-                    <div class="w-12 h-12 rounded bg-gray-800 flex items-center justify-center flex-shrink-0 text-gray-500 text-xl">▶</div>
-                  </template>
-                </template>
-                <div class="min-w-0">
-                  <div class="text-sm text-gray-200 truncate" x-text="getPost(pid) ? ('@' + getPost(pid).author) : pid"></div>
-                  <div class="text-xs text-gray-500 line-clamp-2" x-text="getPost(pid) ? getPost(pid).insight : ''"></div>
-                </div>
-              </div>
-            </template>
-          </div>
-        </template>
-      </div>
-    </template>
-  </div>
-  <div x-show="filteredTools.length === 0" class="text-center text-gray-600 py-20 text-lg">Инструменты не найдены</div>
-</main>
-
-<!-- ============================================================ TAB: WORKFLOW -->
-<main x-show="tab === 'workflow'" class="p-4 max-w-5xl mx-auto">
-  <template x-for="group in workflowGroups" :key="group.value_type">
-    <div class="mb-8">
-      <h2 class="text-lg font-bold text-pink-400 mb-3 flex items-center gap-2">
-        <span x-text="group.value_type"></span>
-        <span class="text-sm text-gray-500 font-normal" x-text="'(' + group.posts.length + ')'"></span>
-      </h2>
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        <template x-for="post in group.posts" :key="post.id">
-          <div
-            class="bg-gray-900 border border-gray-800 rounded-xl p-3 cursor-pointer hover:border-pink-500 transition"
-            @click="openModal(post)"
-          >
-            <div class="flex items-start gap-2 mb-2">
-              <template x-if="post.media && post.media.length > 0">
-                <template x-if="!isVideoSrc(post.media[0])">
-                  <img :src="post.media[0]" class="w-14 h-14 rounded-lg object-cover flex-shrink-0" loading="lazy" />
-                </template>
-                <template x-if="isVideoSrc(post.media[0]) && post.thumbnail">
-                  <img :src="post.thumbnail" class="w-14 h-14 rounded-lg object-cover flex-shrink-0" loading="lazy" />
-                </template>
-                <template x-if="isVideoSrc(post.media[0]) && !post.thumbnail">
-                  <div class="w-14 h-14 rounded-lg bg-gray-800 flex items-center justify-center flex-shrink-0 text-gray-500 text-2xl">▶</div>
-                </template>
-              </template>
-              <div class="min-w-0">
-                <div class="text-xs text-gray-400 truncate" x-text="'@' + post.author"></div>
-                <div class="text-sm text-gray-200 line-clamp-2 mt-0.5" x-text="post.insight"></div>
-              </div>
-            </div>
-            <!-- Workflow chain -->
-            <template x-if="post.workflow && post.workflow.length > 0">
-              <ol class="mt-2 space-y-1">
-                <template x-for="(step, idx) in post.workflow" :key="idx">
-                  <li class="flex items-start gap-1.5 text-[11px] text-gray-400">
-                    <span class="text-pink-500 font-bold flex-shrink-0" x-text="(idx+1) + '.'"></span>
-                    <span x-text="step"></span>
-                  </li>
-                </template>
-              </ol>
-            </template>
+<main x-show="tab === 'tools'" class="p-4 max-w-5xl mx-auto">
+  <template x-for="group in toolsDigest" :key="group.tool">
+    <div class="mb-10">
+      <h2 class="text-base font-bold text-pink-400 uppercase tracking-wide mb-3"
+          x-text="group.tool"></h2>
+      <div class="divide-y divide-gray-800">
+        <template x-for="(idea, idx) in group.ideas" :key="idx">
+          <div class="flex gap-4 py-3 hover:bg-gray-900/60 cursor-pointer rounded transition px-2 -mx-2"
+               @click="openModalById(idea.postId)">
+            <div class="text-sm font-semibold text-white w-52 flex-shrink-0 leading-snug"
+                 x-text="idea.tools"></div>
+            <div class="text-sm text-gray-400 flex-1 leading-snug"
+                 x-text="idea.description"></div>
           </div>
         </template>
       </div>
     </div>
   </template>
-  <div x-show="workflowGroups.length === 0" class="text-center text-gray-600 py-20 text-lg">Нет данных</div>
+  <div x-show="toolsDigest.length === 0"
+       class="text-center text-gray-600 py-20 text-lg">Нет инструментов</div>
+</main>
+
+<!-- ============================================================ TAB: WORKFLOW -->
+<main x-show="tab === 'workflow'" class="p-4 max-w-5xl mx-auto">
+  <template x-for="group in knowledgeDigest" :key="group.value_type">
+    <div class="mb-10">
+      <h2 class="text-base font-bold text-pink-400 uppercase tracking-wide mb-3"
+          x-text="group.value_type"></h2>
+      <div class="divide-y divide-gray-800">
+        <template x-for="(idea, idx) in group.ideas" :key="idx">
+          <div class="flex gap-4 py-3 hover:bg-gray-900/60 cursor-pointer rounded transition px-2 -mx-2"
+               @click="openModalById(idea.postId)">
+            <div class="text-sm font-semibold text-white w-52 flex-shrink-0 leading-snug"
+                 x-text="idea.tools"></div>
+            <div class="text-sm text-gray-400 flex-1 leading-snug"
+                 x-text="idea.description"></div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+  <div x-show="knowledgeDigest.length === 0"
+       class="text-center text-gray-600 py-20 text-lg">Нет идей</div>
 </main>
 
 <!-- ============================================================ TAB: CATEGORIES -->
@@ -358,8 +307,16 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
           </template>
         </div>
 
-        <!-- Insight -->
-        <div x-show="modal.insight" class="bg-gray-800 rounded-lg px-3 py-2 text-sm text-gray-200 mb-3 italic" x-text="modal.insight"></div>
+        <!-- Core idea -->
+        <div x-show="modal.core_idea || modal.insight" class="bg-gray-800 rounded-lg px-3 py-2 text-sm text-gray-200 mb-3" x-text="modal.core_idea || modal.insight"></div>
+
+        <!-- Transcription -->
+        <template x-if="modal.transcription_text">
+          <details class="mb-3">
+            <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-300">Транскрипт аудио</summary>
+            <p class="text-sm text-gray-400 mt-2 whitespace-pre-wrap" x-text="modal.transcription_text"></p>
+          </details>
+        </template>
 
         <!-- Workflow -->
         <template x-if="modal.workflow && modal.workflow.length > 0">
@@ -381,6 +338,14 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
           <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-300">Описание</summary>
           <p class="text-sm text-gray-400 mt-2 whitespace-pre-wrap" x-text="modal.description"></p>
         </details>
+
+        <!-- OCR Text -->
+        <template x-if="modal.ocr_text">
+          <details class="mb-3">
+            <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-300">Текст на экране (OCR)</summary>
+            <p class="text-sm text-gray-400 mt-2 whitespace-pre-wrap" x-text="modal.ocr_text"></p>
+          </details>
+        </template>
 
         <!-- Hashtags -->
         <template x-if="modal.hashtags && modal.hashtags.length > 0">
@@ -527,17 +492,33 @@ function app() {
       return this.toolsList.filter(item => item.tool.toLowerCase().includes(q));
     },
 
-    // ---------- workflow ----------
-    get workflowGroups() {
-      const map = {};
+    // ---------- knowledge digest ----------
+    get toolsDigest() {
+      const groups = {};
+      this.posts.forEach(p => {
+        (p.ideas || []).forEach(idea => {
+          const firstTool = (idea.tools || '').split('+')[0].trim() || 'Другое';
+          if (!groups[firstTool]) groups[firstTool] = [];
+          groups[firstTool].push({ tools: idea.tools, description: idea.description, postId: p.id });
+        });
+      });
+      return Object.entries(groups)
+        .sort((a, b) => b[1].length - a[1].length)
+        .map(([tool, ideas]) => ({ tool, ideas }));
+    },
+
+    get knowledgeDigest() {
+      const groups = {};
       this.posts.forEach(p => {
         const vt = p.value_type || 'другое';
-        if (!map[vt]) map[vt] = [];
-        map[vt].push(p);
+        (p.ideas || []).forEach(idea => {
+          if (!groups[vt]) groups[vt] = [];
+          groups[vt].push({ tools: idea.tools, description: idea.description, postId: p.id });
+        });
       });
-      return Object.entries(map)
+      return Object.entries(groups)
         .sort((a, b) => b[1].length - a[1].length)
-        .map(([value_type, posts]) => ({ value_type, posts }));
+        .map(([value_type, ideas]) => ({ value_type, ideas }));
     },
 
     // ---------- categories ----------

@@ -23,7 +23,7 @@ Thumbs.db
 .claude/
 
 # Документация проекта (локальная)
-plan-v001.md
+plan-*.md
 tasks.md
 
 # Instagram exports (личные данные)

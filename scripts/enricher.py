@@ -21,34 +21,49 @@ sys.path.insert(0, str(Path(__file__).parent))
 from llm import ask  # noqa: E402
 from store import all_post_ids, load_meta, load_transcription, load_ocr, load_enriched, save_enriched  # noqa: E402
 
-ENRICH_PROMPT = """Analyze this Instagram post and return ONLY valid JSON.
+ENRICH_PROMPT = """Предположи, что пользователь сохранил этот пост, потому что в нём есть полезная идея или инструмент.
 
-Post description and hashtags:
+Твоя задача — проанализировать Instagram-пост и извлечь полезную идею, ради которой человек мог его сохранить.
+
+На вход: описание поста, хэштеги, текст с изображений (OCR), транскрипция речи.
+
+Не пересказывай видео. Объясни практическую идею поста.
+
+Верни ТОЛЬКО валидный JSON:
+{{
+  "core_idea": "2–4 предложения на русском: главная практическая идея, зачем это могли сохранить",
+  "category": "1–2 слова: AI Coding | Automation | Tools | Marketing | Design | Business | Productivity | Other",
+  "tools": ["конкретные инструменты, AI-модели, сервисы, упомянутые в посте"],
+  "value_type": "тип пользы: ускорение разработки | экономия денег | автоматизация | новый инструмент | workflow | инструкция | идея | техника",
+  "topics": ["3–6 ключевых слов темы"],
+  "workflow": ["шаг 1", "шаг 2"],
+  "ideas": [
+    {{"tools": "Инструмент1 + Инструмент2", "description": "Одно предложение — что делает и зачем."}}
+  ]
+}}
+
+workflow: если пост описывает конкретную последовательность действий — перечисли шаги. Иначе [].
+ideas: список конкретных идей из поста. Каждая — связка инструментов и одно предложение практической пользы.
+Если инструмент один — просто его название. Если несколько — через " + ".
+
+Представь, что ты пишешь заметки для личной базы знаний инженера.
+
+Пост:
 {description}
 
 {transcription_block}{screen_text_block}
-Return:
-{{
-  "category": "short English label 1-3 words describing the main topic",
-  "tools": ["tool1", "tool2"],
-  "insight": "one sentence summary in Russian",
-  "steps": ["step1", "step2"]
-}}
-
-tools: specific software/services/AI models/libraries mentioned (empty [] if none)
-insight: key takeaway in Russian, one sentence
-steps: if the post describes a process with concrete actions/commands — list them sequentially.
-       Include exact commands, URLs, settings. Empty [] if no actionable steps.
-
-Return only the JSON, no explanation."""
+Верни только JSON, без объяснений."""
 
 
 def _default() -> dict:
     return {
         'category': 'Other',
         'tools': [],
-        'insight': '',
-        'steps': [],
+        'core_idea': '',
+        'value_type': '',
+        'topics': [],
+        'workflow': [],
+        'ideas': [],
     }
 
 
@@ -96,13 +111,18 @@ def enrich_post(post: dict, analysis: dict | None, existing_cats: list[str]) -> 
         if transcription:
             transcription_block = f'Transcription (audio):\n{transcription}\n\n'
 
+    post_type = post.get('type', '')
+
     screen_text_block = ''
     screen_label = ''
     if analysis:
         transcription_text = analysis.get('transcription', {}).get('text', '')
         screen_raw = analysis.get('screen_text', {}).get('combined', '')
         if screen_raw:
-            if is_useful_screen_text(screen_raw, transcription_text):
+            if post_type in ('image', 'carousel'):
+                screen_text_block = f'Image text (OCR):\n{screen_raw[:800]}\n\n'
+                screen_label = ' screen:image'
+            elif is_useful_screen_text(screen_raw, transcription_text):
                 screen_text_block = f'On-screen text:\n{screen_raw[:800]}\n\n'
                 screen_label = ' screen:useful'
             else:
@@ -128,8 +148,11 @@ def enrich_post(post: dict, analysis: dict | None, existing_cats: list[str]) -> 
     return {
         'category': result.get('category') or 'Other',
         'tools': result.get('tools', []),
-        'insight': result.get('insight', ''),
-        'steps': result.get('steps', []),
+        'core_idea': result.get('core_idea', ''),
+        'value_type': result.get('value_type', ''),
+        'topics': result.get('topics', []),
+        'workflow': result.get('workflow') or [],
+        'ideas': result.get('ideas', []),
     }, screen_label
 
 
@@ -176,14 +199,14 @@ def main():
         }
         result, screen_label = enrich_post(post, analysis, existing_cats)
         print(f'[{i}/{len(to_process)}] {pid} (cats: {len(existing_cats)}){screen_label}')
+        print(f'  [{result.get("category","?")}] {result.get("core_idea","")[:80]}')
 
         save_enriched(pid, {'id': pid, **result})
         if result.get('category'):
             done_cats.append(result['category'])
 
-        print(f'  [{result["category"]}] {result["insight"][:60]}')
-        if result['steps']:
-            print(f'  steps: {len(result["steps"])}')
+        if result.get('workflow'):
+            print(f'  steps: {len(result["workflow"])}')
 
     total = sum(1 for pid in all_post_ids() if load_enriched(pid).get('category'))
     print(f'\nDone. Total enriched: {total}')
