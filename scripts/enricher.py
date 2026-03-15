@@ -197,7 +197,11 @@ def main():
             'transcription': load_transcription(pid),
             'screen_text': load_ocr(pid),
         }
-        result, screen_label = enrich_post(post, analysis, existing_cats)
+        try:
+            result, screen_label = enrich_post(post, analysis, existing_cats)
+        except Exception as e:
+            print(f'[{i}/{len(to_process)}] {pid} ERROR: {e}', file=__import__('sys').stderr)
+            continue
         print(f'[{i}/{len(to_process)}] {pid} (cats: {len(existing_cats)}){screen_label}')
         print(f'  [{result.get("category","?")}] {result.get("core_idea","")[:80]}')
 
