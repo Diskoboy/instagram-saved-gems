@@ -1,8 +1,11 @@
 """
-Плоский экспорт медиафайлов в tmp/media/.
+Flat export of all media files to tmp/media/.
+Copies files from content/{id}/ with {id}_ prefix for uniqueness.
+Excludes thumbnail.jpg and *.info.json. Incremental: skips already copied files.
 
-Копирует медиафайлы из content/{id}/ с префиксом {id}_ для уникальности.
-Исключает thumbnail.jpg и *.info.json.
+Плоский экспорт медиафайлов в tmp/media/.
+Копирует файлы из content/{id}/ с префиксом {id}_ для уникальности имён.
+Пропускает thumbnail.jpg и *.info.json. Инкрементальный: не перезаписывает уже скопированные.
 
 Usage:
   python scripts/export_flat.py

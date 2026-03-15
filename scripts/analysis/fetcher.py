@@ -1,6 +1,9 @@
 """
+Download or copy videos from various sources → content_analysis/<id>/video.mp4
+Writes base records to data/analysis.json for further processing.
+
 Скачивает/копирует видео из различных источников → content_analysis/<id>/video.mp4
-Пишет базовые записи в data/analysis.json
+Пишет базовые записи в data/analysis.json для дальнейшей обработки.
 
 Usage:
   python scripts/analysis/fetcher.py --urls-file urls.txt
@@ -33,15 +36,15 @@ def _ytdlp_bin() -> str:
 
 
 def _ffmpeg_bin() -> str:
-    # 1. Явный путь через env
+    # 1. Explicit path via env / Явный путь через env
     ffmpeg_path = os.environ.get('FFMPEG_PATH', '')
     if ffmpeg_path:
         return ffmpeg_path
-    # 2. Локальная папка bin/ в корне проекта (Windows: bin/ffmpeg.exe)
+    # 2. Local bin/ folder in project root / Локальная папка bin/ в корне проекта
     local = ROOT / 'bin' / ('ffmpeg.exe' if platform.system() == 'Windows' else 'ffmpeg')
     if local.exists():
         return str(local)
-    # 3. Системный PATH
+    # 3. System PATH / Системный PATH
     return 'ffmpeg'
 
 
@@ -100,7 +103,7 @@ def collect_inputs(args: argparse.Namespace) -> list[dict]:
                 if ptype in ('reel', 'video') or has_video:
                     items.append({'id': p['id'], 'source': 'posts_json', 'input': p['url']})
 
-    # Deduplicate by id (first wins)
+    # Deduplicate by ID, first occurrence wins / Дедупликация по ID, первое вхождение побеждает
     seen: dict[str, dict] = {}
     for item in items:
         if item['id'] not in seen:

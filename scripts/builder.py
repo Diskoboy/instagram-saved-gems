@@ -496,11 +496,10 @@ function app() {
     get toolsDigest() {
       const groups = {};
       this.posts.forEach(p => {
-        (p.ideas || []).forEach(idea => {
-          const firstTool = (idea.tools || '').split('+')[0].trim() || 'Другое';
-          if (!groups[firstTool]) groups[firstTool] = [];
-          groups[firstTool].push({ tools: idea.tools, description: idea.description, postId: p.id });
-        });
+        if (!(p.tools || []).length) return;
+        const firstTool = p.tools[0];
+        if (!groups[firstTool]) groups[firstTool] = [];
+        groups[firstTool].push({ tools: p.tools.join(' + '), description: p.core_idea || '', postId: p.id });
       });
       return Object.entries(groups)
         .sort((a, b) => b[1].length - a[1].length)
@@ -509,13 +508,13 @@ function app() {
 
     get knowledgeDigest() {
       const groups = {};
-      this.posts.forEach(p => {
-        const vt = p.value_type || 'другое';
-        (p.ideas || []).forEach(idea => {
-          if (!groups[vt]) groups[vt] = [];
-          groups[vt].push({ tools: idea.tools, description: idea.description, postId: p.id });
+      this.posts
+        .filter(p => (p.workflow || []).length > 0 || (p.ideas || []).length > 0)
+        .forEach(p => {
+          const cat = p.category || 'Other';
+          if (!groups[cat]) groups[cat] = [];
+          groups[cat].push({ tools: (p.tools || []).join(' + ') || '—', description: p.core_idea || '', postId: p.id });
         });
-      });
       return Object.entries(groups)
         .sort((a, b) => b[1].length - a[1].length)
         .map(([value_type, ideas]) => ({ value_type, ideas }));

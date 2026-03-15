@@ -1,8 +1,11 @@
 """
+LLM abstraction layer: ollama / openrouter / claude
+Single entry point: ask(prompt, image_b64=None) -> str
+Provider is selected via LLM_PROVIDER env var (default: ollama).
+
 LLM-абстракция: ollama / openrouter / claude
 Единая точка входа: ask(prompt, image_b64=None) -> str
-
-Провайдер выбирается через LLM_PROVIDER (default: ollama).
+Провайдер выбирается через LLM_PROVIDER (по умолчанию: ollama).
 """
 import os
 from pathlib import Path

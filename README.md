@@ -1,277 +1,207 @@
 # Instagram Saved Gems
 
-Скачивает все посты из Instagram, которые ты сохранил. Каждый пост — отдельная папка с медиа. Опционально: AI-анализ — транскрипция, OCR, категоризация — и веб-галерея с фильтрами.
+Two independent tools for processing Instagram content.
 
-## Как это работает
+📖 [Документация на русском](README.ru.md)
 
-### Уровень 1 — скачать
+---
+
+## Module 1 — Instagram Archive
+
+Archives your saved Instagram posts from the official data export:
+downloads all media, generates previews, categorizes content via AI,
+and gives you three output formats to work with.
+
+**What you get:**
+- `html/index.html` — searchable web gallery with AI categories, Tools digest, and Workflow tab
+- `tmp/media/` — flat export: all photos and videos in one folder, named `{postId}_filename.jpg/mp4`
+- `obsidian/` — Markdown notes per post, ready to drop into your Obsidian vault
+
+**Pipeline:**
 
 ```
-saved_posts.html
-    → parser.py  → data/links.json
-    → fetch.py   → content/{id}/   (фото, видео, reels)
-                   data/posts/{id}/meta.json
+saved_posts.html  →  parser.py   →  data/links.json
+links.json        →  fetch.py    →  content/{id}/        (media download)
+content/{id}/     →  thumbnailer →  thumbnails
+content/{id}/     →  transcriber →  transcription.json   (audio → text)
+content/{id}/     →  ocr.py      →  ocr.json             (screen text)
+data/posts/{id}/  →  enricher.py →  enriched.json        (AI categories)
+data/posts/{id}/  →  builder.py  →  html/index.html      (web gallery)
+data/posts/{id}/  →  obsidian    →  obsidian/*.md
+content/{id}/     →  export_flat →  tmp/media/           (flat copy)
 ```
 
-Всё. Больше ничего не нужно — медиа лежат по папкам.
+---
 
-### Уровень 2 — понять (опционально, нужен LLM)
+## Module 2 — Video Analysis
+
+Analyzes videos from any source (not just Instagram):
+transcribes audio with faster-whisper, extracts on-screen text via LLM vision,
+and builds an HTML report grouped by tools and content value.
 
 ```
-content/{id}/
-    → thumbnailer.py    → content/{id}/thumbnail.jpg
-    → transcriber.py    → data/posts/{id}/transcription.json  (видео → текст)
-    → ocr.py            → data/posts/{id}/ocr.json            (текст с экрана)
-    → enricher.py       → data/posts/{id}/enriched.json       (категория / инсайт / шаги)
-    → builder.py        → html/index.html  (галерея с фильтрами)
-    → obsidian_export.py → obsidian/*.md
+urls.txt / .mp4  →  fetcher.py   →  content_analysis/{id}/video.mp4
+video.mp4        →  transcriber  →  transcription
+video.mp4        →  ocr.py       →  screen text
+analysis.json    →  reporter.py  →  html/analysis.html
 ```
 
-## Требования
+---
 
-**Уровень 1:** Python 3.11+, yt-dlp, Firefox или Chrome с залогиненным Instagram
-
-**Уровень 2:** + ffmpeg; LLM: Ollama (локально) **ИЛИ** OpenRouter API key **ИЛИ** Anthropic API key
-
-### Платформы
-
-| Платформа | Статус | Примечания |
-|---|---|---|
-| Linux | Полная поддержка | Основная платформа |
-| macOS | Полная поддержка | Homebrew ffmpeg, стандартные пути Chrome/Firefox |
-| Windows (WSL) | Полная поддержка | Рекомендуется Ubuntu в WSL2 |
-| Windows нативно | Ограниченно | `run.py` поддерживает, yt-dlp может не читать Chrome cookies |
-
-## Установка
-
-### Linux / macOS / WSL
+## Installation
 
 ```bash
-git clone <repo>
-cd save-inst
-bash setup.sh
-```
-
-`setup.sh` создаёт `.venv`, устанавливает зависимости, копирует `.env.example → .env`.
-
-Отредактируй `.env` под свою систему (см. раздел **Конфигурация**).
-
-### Windows нативно (без WSL)
-
-```powershell
-git clone <repo>
-cd save-inst
+git clone https://github.com/Diskoboy/instagram-saved-gems.git
+cd instagram-saved-gems
 python -m venv .venv
-.venv\Scripts\pip install -r requirements.txt
-copy .env.example .env
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env             # edit .env with your settings
 ```
 
-Отредактируй `.env`, укажи `BROWSER=chrome` и путь к профилю Chrome.
-
-## Получение HTML-экспорта Instagram
-
-1. Открой Instagram → **Настройки → Центр аккаунтов → Ваша информация и разрешения → Скачать ваши данные**
-2. Выбери **"Скачать или перенести информацию"**
-3. Формат: **HTML**, диапазон: **Всё время**
-4. Дождись письма на почту (обычно несколько часов — до нескольких дней)
-5. В архиве найди:
-   - `saved_posts/saved_posts.html`
-   - `saved_posts/saved_collections.html` (если есть коллекции)
-6. Скопируй файлы в корень проекта
-
-## Куки и авторизация
-
-yt-dlp (скачивание видео/reels) и Instagram API (fallback для картинок) требуют авторизации через куки. Выбери удобный способ.
-
-### Способ 1 — Firefox (рекомендуется на Linux/macOS)
-
-Ничего настраивать не нужно — yt-dlp сам читает куки из SQLite-базы Firefox.
-
-1. Убедись, что в Firefox открыт и залогинен instagram.com
-2. Укажи путь к профилю в `.env`:
-   ```
-   BROWSER=firefox
-   FIREFOX_PROFILE=~/snap/firefox/common/.mozilla/firefox  # Ubuntu/snap
-   # FIREFOX_PROFILE=~/.mozilla/firefox                    # обычный Firefox
-   ```
-3. Запускай скрипты от того же пользователя, под которым запущен Firefox
-
-Найти путь к профилю:
+For Video Analysis (Module 2):
 ```bash
-ls ~/snap/firefox/common/.mozilla/firefox/   # Ubuntu с snap
-ls ~/.mozilla/firefox/                        # стандартный Firefox
+pip install -r requirements_analysis.txt
 ```
 
-### Способ 2 — Chrome (рекомендуется на Windows/macOS)
+---
 
-1. Убедись, что в Chrome открыт и залогинен instagram.com
-2. Укажи в `.env`:
-   ```
-   BROWSER=chrome
-   # Windows:
-   CHROME_PROFILE=C:\Users\<Name>\AppData\Local\Google\Chrome\User Data
-   # Linux (обычно автоопределяется):
-   # CHROME_PROFILE=~/.config/google-chrome
-   # macOS (обычно автоопределяется):
-   # CHROME_PROFILE=~/Library/Application Support/Google/Chrome
-   ```
+## Configuration
 
-> На Windows yt-dlp может потребовать закрыть Chrome перед запуском (база куки залочена).
+Copy `.env.example` to `.env` and adjust the values.
 
-### Способ 3 — cookies.txt (универсальный, для headless/CI)
+### LLM Provider
 
-Если yt-dlp не может читать куки браузера:
+| Provider | Setting | Notes |
+|----------|---------|-------|
+| Ollama (local) | `LLM_PROVIDER=ollama` | Default. [ollama.com](https://ollama.com/download) → `ollama pull gemma3:4b` |
+| OpenRouter | `LLM_PROVIDER=openrouter` | Set `OPENROUTER_API_KEY` |
+| Anthropic Claude | `LLM_PROVIDER=claude` | Set `ANTHROPIC_API_KEY` |
 
-1. Установи расширение **"Get cookies.txt LOCALLY"** (Chrome/Firefox)
-2. Открой instagram.com, экспортируй куки в `cookies.txt` (Netscape-формат)
-3. Положи `cookies.txt` в корень проекта
-4. В `scripts/fetch.py` замени строку `--cookies-from-browser` на `--cookies cookies.txt`
+OCR requires a vision-capable model: `gemma3:4b`, `llava:7b`, `moondream`.
 
-### Способ 4 — instaloader session-file (рекомендуется как дополнение)
+### Browser Authentication
 
-instaloader используется как fallback для картинок, когда yt-dlp не справляется.
+yt-dlp reads Instagram cookies directly from your browser (you must be logged in):
 
+```env
+BROWSER=firefox
+FIREFOX_PROFILE=~/snap/firefox/common/.mozilla/firefox
+```
+
+Find your profile path:
 ```bash
-# Войти один раз — instaloader сохранит сессию в ~/.config/instaloader/
-.venv/bin/instaloader --login YOUR_USERNAME
-
-# Сессия подхватывается автоматически при запуске fetch.py
+ls ~/snap/firefox/common/.mozilla/firefox/   # Snap Firefox
+ls ~/.mozilla/firefox/                        # Regular install
 ```
 
-### Способ 5 — логин через .env (для CI / headless)
+### Instagram Rate Limiting
 
+All delays are configurable in `.env` to avoid bans:
+
+```env
+FETCH_SLEEP_MIN=3          # min delay between requests (seconds)
+FETCH_SLEEP_MAX=10         # max random delay (seconds)
+FETCH_SOCKET_TIMEOUT=60    # socket timeout
+FETCH_RETRIES=5            # retries on failure
+FETCH_EXTRACTOR_RETRIES=3  # extractor-level retries
+FETCH_PROCESS_TIMEOUT=120  # hard subprocess timeout
+FETCH_API_TIMEOUT=20       # Instagram API fallback timeout
 ```
-INSTA_USER=your_username
-INSTA_PASS=your_password
+
+---
+
+## Module 1 — Usage
+
+### 1. Get your Instagram export
+
+Go to Instagram → Settings → Your activity → Download your information.
+Choose **HTML** format. Unzip and put `saved_posts.html` (and optionally `saved_collections.html`) in the project root.
+
+Or create a plain text file with one URL per line:
+```
+https://www.instagram.com/p/ABC123/
+https://www.instagram.com/reel/XYZ456/
 ```
 
-> Прямой логин через пароль чаще вызывает капчу. Предпочтительнее session-file.
-
-### Про Instagram API
-
-Официального API для сохранённых постов **не существует**:
-- `Instagram Basic Display API` — закрыт 4 декабря 2024
-- `Instagram Graph API` — только для бизнес-аккаунтов, эндпоинта для saved posts нет
-
-Проект использует приватный API Instagram (тот же, что мобильное приложение) с куками браузера.
-
-## Запуск
+### 2. Run the pipeline
 
 ```bash
-# Просто скачать все сохранённые посты:
-python run.py --only extract     # HTML → links.json
-python run.py --only fetch       # скачать медиа → content/{id}/
+# Full pipeline
+python run.py
 
-# Полный pipeline с AI-анализом и галереей:
-python run.py                    # extract → fetch → thumbnails → enrich → build → obsidian
-
-# Отдельные шаги:
-python run.py --only thumbnails  # превью из видео
-python run.py --only enrich      # AI-анализ (нужен LLM_PROVIDER)
-python run.py --only build       # собрать html/index.html
-python run.py --only obsidian    # экспорт в Obsidian
-
-.venv/bin/python scripts/fetch.py --retry-errors   # повторить ошибки
-.venv/bin/python scripts/enricher.py --force        # пересчитать анализ
+# Individual steps
+python run.py --only extract     # parse HTML → links.json
+python run.py --only fetch       # download media from Instagram
+python run.py --only thumbnails  # extract/assign thumbnails
+python run.py --only transcribe  # transcribe audio (faster-whisper)
+python run.py --only ocr         # extract on-screen text (ollama vision)
+python run.py --only enrich      # AI categorization
+python run.py --only build       # build web gallery
+python run.py --only obsidian    # export to Obsidian
+python run.py --only export      # flat copy to tmp/media/
 ```
 
-После запуска открой `html/index.html` в браузере.
+All steps are **incremental** — already processed posts are skipped automatically.
 
-## Конфигурация LLM
+### 3. View results
 
-Нужна только для шага `enrich`. Выбери одного провайдера:
-
-| Переменная | Описание | По умолчанию |
-|---|---|---|
-| `LLM_PROVIDER` | Провайдер: `ollama` / `openrouter` / `claude` | `ollama` |
-| `OLLAMA_URL` | URL ollama | `http://localhost:11434` |
-| `OLLAMA_MODEL` | Модель ollama (нужна vision для OCR) | `gemma3:4b` |
-| `OPENROUTER_API_KEY` | API-ключ OpenRouter | — |
-| `OPENROUTER_MODEL` | Модель OpenRouter | `openai/gpt-4o-mini` |
-| `ANTHROPIC_API_KEY` | API-ключ Anthropic | — |
-| `ANTHROPIC_MODEL` | Модель Claude | `claude-haiku-4-5-20251001` |
-
-> Для OCR нужна vision-capable модель: `gemma3:4b`, `llava:7b`, `moondream`. Текстовые модели не поддерживают изображения.
-
-## Конфигурация Instagram
-
-Скопируй `.env.example` в `.env` и заполни нужные поля:
-
-| Переменная | Описание | По умолчанию |
-|---|---|---|
-| `BROWSER` | Браузер для куки: `firefox` или `chrome` | `firefox` |
-| `FIREFOX_PROFILE` | Путь к профилю Firefox | `~/snap/firefox/common/.mozilla/firefox` |
-| `CHROME_PROFILE` | Путь к профилю Chrome (нужен если `BROWSER=chrome`) | автоопределение |
-| `INSTA_USER` | Логин Instagram (для instaloader) | — |
-| `INSTA_PASS` | Пароль Instagram (для instaloader) | — |
-
-## Структура проекта
-
+```bash
+open html/index.html       # macOS
+xdg-open html/index.html   # Linux
+# Windows: double-click html/index.html
 ```
-instagram-saved-gems/
-├── scripts/
-│   ├── parser.py           # парсит HTML-экспорт Instagram → links.json
-│   ├── fetch.py            # скачивает медиа через yt-dlp + Instagram API
-│   ├── thumbnailer.py      # генерирует превью (ffmpeg + Instagram API)
-│   ├── transcriber.py      # транскрибирует аудио → transcription.json
-│   ├── ocr.py              # извлекает текст с экрана → ocr.json
-│   ├── enricher.py         # AI-анализ → enriched.json (категория / инсайт / шаги)
-│   ├── store.py            # хранилище данных per-post
-│   ├── builder.py          # строит html/index.html галерею
-│   └── obsidian_export.py  # экспортирует в Obsidian markdown
-├── data/
-│   ├── links.json          # спарсенные ссылки (генерируется)
-│   └── posts/
-│       └── {id}/
-│           ├── meta.json           # fetch.py
-│           ├── transcription.json  # transcriber.py
-│           ├── ocr.json            # ocr.py
-│           └── enriched.json       # enricher.py
-├── content/                # скачанные медиафайлы Instagram (генерируется, не в git)
-├── html/
-│   ├── index.html          # веб-галерея (генерируется)
-│   └── data/posts.js       # данные для галереи (генерируется, не в git)
-├── obsidian/               # Obsidian-заметки (генерируется, не в git)
-├── bin/                    # локальные бинарники (не в git)
-│   └── ffmpeg.exe          # Windows: положить руками
-├── run.py                  # оркестратор pipeline
-├── requirements.txt        # зависимости
-├── setup.sh                # скрипт установки (Linux/macOS)
-├── .env.example            # шаблон конфигурации
-└── saved_posts.html        # экспорт из Instagram (не в git)
+
+### Flat export
+
+All media in one folder, useful for sorting or importing into photo apps:
+```bash
+python scripts/export_flat.py
+# → tmp/media/{postId}_media_001.jpg
+# → tmp/media/{postId}_media_001.mp4
 ```
+
+### Obsidian export
+
+```bash
+python run.py --only obsidian
+# → obsidian/{postId}.md
+```
+
+---
+
+## Module 2 — Usage
+
+```bash
+# From URLs file
+python scripts/analysis/fetcher.py --urls-file urls.txt
+
+# From local video files
+python scripts/analysis/fetcher.py --local-dir /path/to/videos
+
+# Transcribe + OCR
+python scripts/analysis/transcriber.py
+python scripts/analysis/ocr.py
+
+# Build HTML report
+python scripts/analysis/reporter.py
+open html/analysis.html
+```
+
+---
 
 ## Troubleshooting
 
-**yt-dlp падает с ошибкой cookies:**
-- Убедись что `BROWSER` и путь к профилю в `.env` верны
-- Firefox: попробуй запустить с открытым и закрытым браузером
-- Chrome на Windows: закрой браузер перед запуском (база куки залочена)
-- Альтернатива: используй `cookies.txt` (Способ 3)
+**yt-dlp fails / Instagram blocks:**
+- Make sure you are logged into Instagram in Firefox/Chrome
+- Increase delays: `FETCH_SLEEP_MIN=5`, `FETCH_SLEEP_MAX=20`
 
-**instaloader не скачивает картинки:**
-- Создай session-file (Способ 4)
-- Без авторизации instaloader не достаёт приватные/старые посты
+**LLM timeout:**
+Set `LLM_TIMEOUT=240` in `.env`.
 
-**Посты с `fetch_error: true`:**
-```bash
-.venv/bin/python scripts/fetch.py --retry-errors
-```
+**ffmpeg not found (Windows):**
+Download from [github.com/BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases),
+copy `ffmpeg.exe` and `ffprobe.exe` into the `bin/` folder of the project.
 
-**AI-анализ не запускается / нужно пересчитать:**
-```bash
-.venv/bin/python scripts/enricher.py --force
-```
-
-**Превью не отображаются:**
-```bash
-python run.py --only thumbnails
-```
-
-**Пути к медиа не работают в браузере:**
-- Открывай именно `html/index.html`, не отдельные файлы из `html/data/`
-- Пути вида `../content/...` работают только относительно `html/`
-
-**Python не найден (Windows нативно):**
-- Убедись что Python 3.11+ в PATH
-- Используй `python` вместо `python3`
+**OCR returns JSON blobs:**
+Already handled — `clean_ocr_text()` extracts plain text automatically.

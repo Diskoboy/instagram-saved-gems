@@ -1,5 +1,9 @@
 """
+Transcribe audio from video posts using faster-whisper.
+Saves results to data/posts/{id}/transcription.json. Incremental by default.
+
 Транскрибирует аудио из видеопостов через faster-whisper.
+Сохраняет результаты в data/posts/{id}/transcription.json. По умолчанию инкрементальный.
 
 Usage:
   python scripts/analysis/transcriber.py

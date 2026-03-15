@@ -1,11 +1,12 @@
 """
-Per-post file storage.
+Per-post file storage layer. Each post lives in its own directory.
+Слой хранения данных по постам. Каждый пост — в отдельной папке.
 
-Layout:
-  data/posts/{id}/meta.json
-  data/posts/{id}/transcription.json
-  data/posts/{id}/ocr.json
-  data/posts/{id}/enriched.json
+Layout / Структура:
+  data/posts/{id}/meta.json          — fetch metadata / метаданные скачивания
+  data/posts/{id}/transcription.json — audio transcript / транскрипция аудио
+  data/posts/{id}/ocr.json           — on-screen text / текст с экрана
+  data/posts/{id}/enriched.json      — AI analysis / AI-анализ
 """
 import json
 import re as _re

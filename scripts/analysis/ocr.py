@@ -1,7 +1,11 @@
 """
-OCR для всех постов:
-- image/carousel: читает jpg/png картинки через ollama vision
-- reel/video: извлекает кадры из mp4 через ffmpeg, затем OCR
+OCR on-screen text extraction for all posts using LLM vision.
+- image/carousel: reads jpg/png files directly
+- reel/video: extracts frames via ffmpeg, then OCR
+
+OCR для извлечения текста с экрана через LLM vision.
+- image/carousel: читает jpg/png картинки напрямую
+- reel/video: извлекает кадры через ffmpeg, затем OCR
 
 Usage:
   python scripts/analysis/ocr.py
@@ -43,7 +47,8 @@ def image_to_base64(path: Path) -> str:
 
 
 def clean_ocr_text(text: str) -> str:
-    """Если ollama вернул JSON вместо plain text — извлечь строковые значения."""
+    """Extract plain text from ollama response (handles JSON responses).
+    Извлекает plain text из ответа ollama (обрабатывает JSON-ответы)."""
     text = text.strip()
     if not text.startswith('{') and not text.startswith('['):
         return text
@@ -117,7 +122,8 @@ def main():
 
     id_filter = set(args.ids) if args.ids else None
 
-    # Each entry: (pid, source, 'image'|'video')
+    # Build processing queue: (pid, source, 'image'|'video')
+    # Формируем очередь: (pid, источник, 'image'|'video')
     to_process = []
     for pid in all_post_ids():
         if id_filter and pid not in id_filter:

@@ -1,4 +1,8 @@
 """
+Export enriched posts as Obsidian markdown notes.
+Exports data/posts/{id}/ → obsidian/<post_id>.md
+
+Экспортирует обогащённые посты как Markdown-заметки для Obsidian.
 data/posts/{id}/ → obsidian/<post_id>.md
 """
 import sys
@@ -36,7 +40,7 @@ def format_tags(hashtags: list[str]) -> str:
 def format_embeds(media: list[str]) -> str:
     lines = []
     for path in media:
-        # Use absolute path from project root → Obsidian ![[...]] syntax
+        # Use path from project root → Obsidian embed syntax / Путь от корня → синтаксис вставки Obsidian
         lines.append(f'![[{path}]]')
     return '\n'.join(lines)
 

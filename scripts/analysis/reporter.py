@@ -1,10 +1,13 @@
 """
-Читает data/analysis.json, анализирует через ollama, строит html/analysis.html
+Read data/analysis.json, enrich via LLM, build html/analysis.html.
+Two tabs: by tools and by value/meaning.
+
+Читает data/analysis.json, анализирует через LLM, строит html/analysis.html.
 Два таба: по инструментам и по смыслу/ценности.
 
 Usage:
   python scripts/analysis/reporter.py
-  python scripts/analysis/reporter.py --model gemma3:4b --no-llm
+  python scripts/analysis/reporter.py --no-llm
   python scripts/analysis/reporter.py --output html/report.html
 """
 import argparse

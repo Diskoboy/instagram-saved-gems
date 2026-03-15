@@ -1,4 +1,7 @@
 """
+Extract thumbnails from video posts (reel/video) via ffmpeg.
+Saves content/{id}/thumbnail.jpg and updates meta.json.
+
 Извлекает thumbnail из видеопостов (reel/video) через ffmpeg.
 Сохраняет content/{id}/thumbnail.jpg и обновляет meta.json.
 """

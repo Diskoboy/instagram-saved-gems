@@ -1,7 +1,10 @@
 """
-Читает data/links.json, скачивает медиа через yt-dlp → content/<post_id>/
-Для image-постов использует Instagram API как fallback (cookies из Firefox).
-Формирует data/posts.json
+Download Instagram posts from links.json using yt-dlp → content/<post_id>/
+Falls back to Instagram private API for image posts (uses browser cookies).
+Reads: data/links.json → Writes: data/posts/<id>/meta.json
+
+Скачивает посты Instagram из links.json через yt-dlp → content/<post_id>/
+Fallback на Instagram API для image-постов (куки из браузера).
 """
 import json
 import os
@@ -19,6 +22,16 @@ YTDLP = str(Path(__file__).parent.parent / '.venv/bin/yt-dlp')
 FIREFOX_PROFILE = os.environ.get('FIREFOX_PROFILE', str(Path.home() / 'snap/firefox/common/.mozilla/firefox'))
 BROWSER = os.environ.get('BROWSER', 'firefox')
 CHROME_PROFILE = os.environ.get('CHROME_PROFILE', '')
+
+# Instagram fetch tuning — configurable via .env
+# Настройки задержек и таймаутов для yt-dlp — задаются через .env
+_SLEEP_MIN         = int(os.environ.get('FETCH_SLEEP_MIN',         '3'))
+_SLEEP_MAX         = int(os.environ.get('FETCH_SLEEP_MAX',         '10'))
+_SOCKET_TIMEOUT    = int(os.environ.get('FETCH_SOCKET_TIMEOUT',    '60'))
+_RETRIES           = int(os.environ.get('FETCH_RETRIES',           '5'))
+_EXTRACTOR_RETRIES = int(os.environ.get('FETCH_EXTRACTOR_RETRIES', '3'))
+_PROCESS_TIMEOUT   = int(os.environ.get('FETCH_PROCESS_TIMEOUT',   '120'))
+_API_TIMEOUT       = int(os.environ.get('FETCH_API_TIMEOUT',       '20'))
 
 _SHORTCODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
 
@@ -112,18 +125,18 @@ def download_with_ytdlp(url: str, out_dir: Path) -> subprocess.CompletedProcess:
         '--write-info-json',
         '--no-playlist',
         '--cookies-from-browser', f'{BROWSER}:{CHROME_PROFILE if BROWSER == "chrome" else FIREFOX_PROFILE}',
-        '--sleep-interval', '3',
-        '--max-sleep-interval', '10',
-        '--socket-timeout', '60',
-        '--retries', '5',
-        '--extractor-retries', '3',
+        '--sleep-interval', str(_SLEEP_MIN),
+        '--max-sleep-interval', str(_SLEEP_MAX),
+        '--socket-timeout', str(_SOCKET_TIMEOUT),
+        '--retries', str(_RETRIES),
+        '--extractor-retries', str(_EXTRACTOR_RETRIES),
         '--write-thumbnail',
         '--convert-thumbnails', 'jpg',
         '-o', str(out_dir / 'media_%(autonumber)s.%(ext)s'),
         '-o', f'thumbnail:{out_dir}/thumbnail.%(ext)s',
         url,
     ]
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=_PROCESS_TIMEOUT)
 
 
 def download_with_instagram_api(post_id: str, out_dir: Path) -> bool:
@@ -146,7 +159,7 @@ def download_with_instagram_api(post_id: str, out_dir: Path) -> bool:
         media_id = shortcode_to_mediaid(post_id)
         url = f'https://i.instagram.com/api/v1/media/{media_id}/info/'
         req = urllib.request.Request(url, headers=headers)
-        data = json.loads(urllib.request.urlopen(req, timeout=20).read())
+        data = json.loads(urllib.request.urlopen(req, timeout=_API_TIMEOUT).read())
     except Exception as e:
         print(f'  instagram api error: {e}', file=sys.stderr)
         return False

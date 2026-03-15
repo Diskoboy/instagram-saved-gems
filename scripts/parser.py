@@ -1,9 +1,13 @@
 """
+Parse saved_posts.html and saved_collections.html → data/links.json
+Also accepts a plain text file with Instagram URLs (one per line).
+
 Парсит saved_posts.html и saved_collections.html → data/links.json
+Также принимает текстовый файл со ссылками Instagram (по одной в строке).
 
 Usage:
-  python scripts/parser.py                         # из HTML-файлов
-  python scripts/parser.py --txt inst.txt          # из текстового файла со ссылками
+  python scripts/parser.py                  # from HTML export files / из HTML-файлов
+  python scripts/parser.py --txt inst.txt   # from text file / из текстового файла
 """
 import argparse
 import json
@@ -23,17 +27,17 @@ def parse_saved_posts(filepath: Path) -> list[dict]:
         soup = BeautifulSoup(f, 'lxml')
 
     for block in soup.find_all(class_='pam'):
-        # Author: first inner div with class _a6-h
+        # Author: first inner div with class _a6-h / Автор: первый div с классом _a6-h
         author_div = block.find('div', class_='_a6-h')
         author = author_div.get_text(strip=True) if author_div else ''
 
-        # URL: first <a> with instagram.com
+        # URL: first <a> pointing to instagram.com / Первая ссылка на instagram.com
         link = block.find('a', href=re.compile(r'instagram\.com'))
         if not link:
             continue
         url = link['href'].rstrip('/')
 
-        # Timestamp: second <tr> → second <td>
+        # Timestamp: second <tr> → second <td> / Дата: вторая строка → вторая ячейка
         rows = block.find_all('tr')
         saved_at = ''
         if len(rows) >= 2:
@@ -54,14 +58,14 @@ def parse_saved_collections(filepath: Path) -> list[dict]:
         soup = BeautifulSoup(f, 'lxml')
 
     for block in soup.find_all(class_='pam'):
-        # URL and author: <a href=url>author</a>
+        # URL and author: <a href=url>author</a> / Ссылка и автор из тега <a>
         link = block.find('a', href=re.compile(r'instagram\.com'))
         if not link:
             continue
         url = link['href'].rstrip('/')
         author = link.get_text(strip=True)
 
-        # Timestamp: row with "Added Time"
+        # Timestamp: row with "Added Time" / Дата добавления в коллекцию
         saved_at = ''
         rows = block.find_all('tr')
         if len(rows) >= 2:
@@ -119,7 +123,7 @@ def main():
         else:
             print('saved_collections.html not found, skipping')
 
-    # Deduplicate by url, keep first occurrence
+    # Deduplicate by URL, keep first occurrence / Дедупликация по URL, оставляем первое вхождение
     seen: set[str] = set()
     unique: list[dict] = []
     for post in all_posts:
