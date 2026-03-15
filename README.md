@@ -205,3 +205,18 @@ copy `ffmpeg.exe` and `ffprobe.exe` into the `bin/` folder of the project.
 
 **OCR returns JSON blobs:**
 Already handled — `clean_ocr_text()` extracts plain text automatically.
+
+---
+
+## run.py vs run_analysis.py
+
+| | `run.py` | `run_analysis.py` |
+|---|---|---|
+| **Module** | 1 — Instagram Archive | 2 — Video Analysis |
+| **Source** | `saved_posts.html` / URL list | any video: URLs, local files, mp4 |
+| **Steps** | extract → fetch → thumbnails → transcribe → ocr → enrich → build → obsidian → export | fetch → transcribe → ocr → report |
+| **Output** | `html/index.html` (post gallery) | `html/analysis.html` (video report) |
+| **Extra flags** | `--only <step>` | `--only`, `--skip`, `--from-posts`, `--urls-file`, `--local-dir`, `--no-llm` |
+
+Use `run.py` for your Instagram saved posts archive.
+Use `run_analysis.py` for analyzing arbitrary videos from any source.

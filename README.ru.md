@@ -205,3 +205,18 @@ xdg-open html/analysis.html
 
 **OCR возвращает JSON вместо текста:**
 Уже обработано — `clean_ocr_text()` автоматически извлекает plain text из любого JSON-ответа.
+
+---
+
+## run.py vs run_analysis.py
+
+| | `run.py` | `run_analysis.py` |
+|---|---|---|
+| **Модуль** | 1 — Instagram Archive | 2 — Video Analysis |
+| **Источник** | `saved_posts.html` / список URL | любые видео: URL, локальные файлы, mp4 |
+| **Шаги** | extract → fetch → thumbnails → transcribe → ocr → enrich → build → obsidian → export | fetch → transcribe → ocr → report |
+| **Выход** | `html/index.html` (галерея постов) | `html/analysis.html` (отчёт по видео) |
+| **Флаги** | `--only <step>` | `--only`, `--skip`, `--from-posts`, `--urls-file`, `--local-dir`, `--no-llm` |
+
+`run.py` — для архива сохранённых постов Instagram.
+`run_analysis.py` — для анализа произвольных видео из любого источника.
